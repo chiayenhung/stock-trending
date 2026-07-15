@@ -1,0 +1,124 @@
+{
+  "session_date": "2026-07-15",
+  "as_of": "2026-07-15T20:00:00Z",
+  "reference_venue": "XNAS",
+  "analysis_window": "close",
+  "observations": [
+    {
+      "fact_type": "quote",
+      "instrument_id": "US67066G1040",
+      "symbol": "NVDA",
+      "venue": "XNAS",
+      "observed_at": "2026-07-15T19:59:45Z",
+      "retrieved_at": "2026-07-15T19:59:50Z",
+      "market_session": "regular",
+      "value": {
+        "price": 186.25,
+        "bid": 186.24,
+        "ask": 186.26
+      },
+      "unit": "price",
+      "currency": "USD",
+      "adjustment_status": "not_applicable",
+      "source": {
+        "provider": "demo_static",
+        "record_id": "nvda-quote-20260715",
+        "url": null,
+        "license_class": "repository_fixture",
+        "adapter_version": "1.0.0"
+      },
+      "trust": {
+        "provenance_class": "fixture",
+        "extraction_method": "fixture",
+        "corroboration_state": "primary"
+      }
+    },
+    {
+      "fact_type": "bar_metrics",
+      "instrument_id": "US67066G1040",
+      "symbol": "NVDA",
+      "venue": "XNAS",
+      "observed_at": "2026-07-15T19:59:00Z",
+      "retrieved_at": "2026-07-15T19:59:50Z",
+      "market_session": "regular",
+      "value": {
+        "average_volume_20d": 182000000,
+        "volume_ratio": 1.45,
+        "momentum_20d_pct": 8.2
+      },
+      "unit": "mixed",
+      "currency": "USD",
+      "adjustment_status": "adjusted",
+      "source": {
+        "provider": "demo_static",
+        "record_id": "nvda-metrics-20260715",
+        "url": null,
+        "license_class": "repository_fixture",
+        "adapter_version": "1.0.0"
+      },
+      "trust": {
+        "provenance_class": "fixture",
+        "extraction_method": "fixture",
+        "corroboration_state": "primary"
+      }
+    },
+    {
+      "fact_type": "quote",
+      "instrument_id": "US0378331005",
+      "symbol": "AAPL",
+      "venue": "XNAS",
+      "observed_at": "2026-07-15T19:59:45Z",
+      "retrieved_at": "2026-07-15T19:59:50Z",
+      "market_session": "regular",
+      "value": {
+        "price": 230.1,
+        "bid": 230.08,
+        "ask": 230.12
+      },
+      "unit": "price",
+      "currency": "USD",
+      "adjustment_status": "not_applicable",
+      "source": {
+        "provider": "demo_static",
+        "record_id": "aapl-quote-20260715",
+        "url": null,
+        "license_class": "repository_fixture",
+        "adapter_version": "1.0.0"
+      },
+      "trust": {
+        "provenance_class": "fixture",
+        "extraction_method": "fixture",
+        "corroboration_state": "primary"
+      }
+    },
+    {
+      "fact_type": "bar_metrics",
+      "instrument_id": "US0378331005",
+      "symbol": "AAPL",
+      "venue": "XNAS",
+      "observed_at": "2026-07-15T19:59:00Z",
+      "retrieved_at": "2026-07-15T19:59:50Z",
+      "market_session": "regular",
+      "value": {
+        "average_volume_20d": 55000000,
+        "volume_ratio": 0.95,
+        "momentum_20d_pct": 1.1
+      },
+      "unit": "mixed",
+      "currency": "USD",
+      "adjustment_status": "adjusted",
+      "source": {
+        "provider": "demo_static",
+        "record_id": "aapl-metrics-20260715",
+        "url": null,
+        "license_class": "repository_fixture",
+        "adapter_version": "1.0.0"
+      },
+      "trust": {
+        "provenance_class": "fixture",
+        "extraction_method": "fixture",
+        "corroboration_state": "primary"
+      }
+    }
+  ]
+}

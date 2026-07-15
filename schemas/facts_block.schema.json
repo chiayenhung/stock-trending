@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stocktrend.local/schemas/facts_block/1.0.0",
+  "title": "Facts block",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "as_of", "facts"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "as_of": {"type": "string", "format": "date-time"},
+    "facts": {
+      "type": "array",
+      "items": {"$ref": "https://stocktrend.local/schemas/fact/1.0.0"},
+      "minItems": 1
+    }
+  }
+}

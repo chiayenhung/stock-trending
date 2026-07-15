@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stock-trend-workflow"
+version = "0.1.0"
+description = "Fail-closed, evidence-linked stock trend research workflow"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "jsonschema>=4.21,<5",
+  "PyYAML>=6.0,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<9",
+  "pytest-cov>=5,<7",
+]
+
+[project.scripts]
+stocktrend = "stocktrend.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["stocktrend*"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]

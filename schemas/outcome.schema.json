@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stocktrend.local/schemas/outcome/1.0.0",
+  "title": "Outcome",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "outcome_id",
+    "signal_id",
+    "horizon_sessions",
+    "decision_price",
+    "observation_price",
+    "gross_return_pct",
+    "net_return_pct",
+    "fees_usd",
+    "slippage_usd",
+    "benchmark_return_pct",
+    "observed_at",
+    "missing_reason"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "outcome_id": {"type": "string"},
+    "signal_id": {"type": "string"},
+    "horizon_sessions": {"type": "integer", "minimum": 1},
+    "decision_price": {"type": ["number", "null"], "exclusiveMinimum": 0},
+    "observation_price": {"type": ["number", "null"], "exclusiveMinimum": 0},
+    "gross_return_pct": {"type": ["number", "null"]},
+    "net_return_pct": {"type": ["number", "null"]},
+    "fees_usd": {"type": "number", "minimum": 0},
+    "slippage_usd": {"type": "number", "minimum": 0},
+    "benchmark_return_pct": {"type": ["number", "null"]},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "missing_reason": {"type": ["string", "null"]}
+  }
+}

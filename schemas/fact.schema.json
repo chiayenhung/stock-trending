@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stocktrend.local/schemas/fact/1.0.0",
+  "title": "Fact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "fact_id",
+    "fact_type",
+    "instrument_id",
+    "symbol",
+    "venue",
+    "observed_at",
+    "retrieved_at",
+    "value",
+    "unit",
+    "currency",
+    "adjustment_status",
+    "source",
+    "trust",
+    "raw_hash"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "fact_id": {"type": "string", "pattern": "^fact_[a-f0-9]{24}$"},
+    "fact_type": {
+      "enum": ["quote", "bar_metrics", "fundamental", "news", "industry_datapoint", "social_post", "position"]
+    },
+    "instrument_id": {"type": "string", "minLength": 1},
+    "symbol": {"type": "string", "pattern": "^[A-Z0-9.-]{1,16}$"},
+    "venue": {"type": "string", "minLength": 4},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "effective_at": {"type": ["string", "null"], "format": "date-time"},
+    "retrieved_at": {"type": "string", "format": "date-time"},
+    "market_session": {"type": "string"},
+    "value": {"type": "object"},
+    "unit": {"type": ["string", "null"]},
+    "currency": {"type": ["string", "null"]},
+    "scale": {"type": "number"},
+    "precision": {"type": "integer", "minimum": 0},
+    "adjustment_status": {"enum": ["adjusted", "unadjusted", "not_applicable", "unknown"]},
+    "corporate_action_ref": {"type": ["string", "null"]},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "record_id", "url", "license_class", "adapter_version"],
+      "properties": {
+        "provider": {"type": "string", "minLength": 1},
+        "record_id": {"type": "string", "minLength": 1},
+        "url": {"type": ["string", "null"], "format": "uri"},
+        "license_class": {"type": "string", "minLength": 1},
+        "adapter_version": {"type": "string", "minLength": 1}
+      }
+    },
+    "trust": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provenance_class", "extraction_method", "corroboration_state"],
+      "properties": {
+        "provenance_class": {"type": "string", "minLength": 1},
+        "extraction_method": {"enum": ["deterministic", "llm", "fixture"]},
+        "corroboration_state": {"enum": ["primary", "corroborated", "uncorroborated", "not_applicable"]}
+      }
+    },
+    "raw_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "revision_status": {"enum": ["current", "revised", "retracted"]}
+  }
+}

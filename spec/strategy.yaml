@@ -1,0 +1,50 @@
+schema_version: 1.0.0
+strategy_id: us_momentum_swing_v1
+strategy_version: 1.0.0
+status: analysis_only
+venues:
+  - XNAS
+  - XNYS
+assets:
+  allowed:
+    - common_stock
+    - adr
+    - allowlisted_etf
+  excluded:
+    - option
+    - short
+    - otc
+    - leveraged
+signal_types:
+  - no_action
+  - watch
+  - enter_long
+  - add_long
+  - reduce
+  - exit
+actionable_signal_types:
+  - enter_long
+  - add_long
+  - reduce
+  - exit
+screen:
+  minimum_price_usd: 5.0
+  minimum_average_volume: 500000
+  minimum_volume_ratio: 1.2
+  minimum_momentum_20d_pct: 3.0
+holding_horizon_sessions:
+  minimum: 1
+  maximum: 5
+required_fact_types:
+  enter_long:
+    - quote
+    - bar_metrics
+  add_long:
+    - quote
+    - bar_metrics
+  reduce:
+    - quote
+    - position
+  exit:
+    - quote
+    - position

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stocktrend.local/schemas/signal_proposal/1.0.0",
+  "title": "Signal proposal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "signal_id",
+    "revision",
+    "strategy_id",
+    "strategy_version",
+    "signal_type",
+    "instrument_id",
+    "symbol",
+    "venue",
+    "decision_at",
+    "expires_at",
+    "holding_horizon_sessions",
+    "entry_condition",
+    "maximum_entry_price",
+    "stop_price",
+    "target_price",
+    "time_exit_sessions",
+    "thesis_invalidation",
+    "evidence_claim_ids",
+    "confidence_bucket",
+    "known_gaps",
+    "execution_eligible",
+    "eligibility_reasons",
+    "producer"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "signal_id": {"type": "string", "minLength": 1},
+    "revision": {"type": "integer", "minimum": 1},
+    "strategy_id": {"type": "string"},
+    "strategy_version": {"type": "string"},
+    "signal_type": {
+      "enum": ["no_action", "watch", "enter_long", "add_long", "reduce", "exit"]
+    },
+    "instrument_id": {"type": "string"},
+    "symbol": {"type": "string"},
+    "venue": {"type": "string"},
+    "decision_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "holding_horizon_sessions": {"type": "integer", "minimum": 1, "maximum": 30},
+    "entry_condition": {"type": "string"},
+    "maximum_entry_price": {"type": ["number", "null"], "exclusiveMinimum": 0},
+    "stop_price": {"type": ["number", "null"], "exclusiveMinimum": 0},
+    "target_price": {"type": ["number", "null"], "exclusiveMinimum": 0},
+    "time_exit_sessions": {"type": "integer", "minimum": 1, "maximum": 30},
+    "thesis_invalidation": {"type": "string"},
+    "evidence_claim_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "confidence_bucket": {"enum": ["low", "medium", "high"]},
+    "known_gaps": {"type": "array", "items": {"type": "string"}},
+    "execution_eligible": {"type": "boolean"},
+    "eligibility_reasons": {"type": "array", "items": {"type": "string"}},
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vendor", "model", "prompt_version", "analyst_output_ids"],
+      "properties": {
+        "vendor": {"type": "string"},
+        "model": {"type": "string"},
+        "prompt_version": {"type": "string"},
+        "analyst_output_ids": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

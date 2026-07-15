@@ -1,0 +1,38 @@
+schema_version: 1.0.0
+tiers:
+  T0:
+    workload: extraction
+    requires:
+      structured_output: true
+  T1:
+    workload: semantic_validation
+    requires:
+      structured_output: true
+      different_vendor: true
+  T2:
+    workload: research_reasoning
+    requires:
+      structured_output: true
+platforms:
+  codex:
+    producer_vendor: openai
+    T0:
+      model_env: STOCKTREND_OPENAI_MODEL
+    T2:
+      model_env: STOCKTREND_OPENAI_MODEL
+  claude_cowork:
+    producer_vendor: anthropic
+    T0:
+      model_env: STOCKTREND_ANTHROPIC_MODEL
+    T2:
+      model_env: STOCKTREND_ANTHROPIC_MODEL
+validation:
+  require_different_vendor: true
+  unavailable_policy: research_only
+  routes:
+    openai:
+      validator_vendor: anthropic
+      model_env: STOCKTREND_ANTHROPIC_MODEL
+    anthropic:
+      validator_vendor: openai
+      model_env: STOCKTREND_OPENAI_MODEL

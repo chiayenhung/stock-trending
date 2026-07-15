@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stocktrend.local/schemas/delivery_outbox_item/1.0.0",
+  "title": "Delivery outbox item",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation_id",
+    "run_id",
+    "channel",
+    "artifact_path",
+    "artifact_hash",
+    "status",
+    "created_at",
+    "acknowledged_at"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "operation_id": {"type": "string"},
+    "run_id": {"type": "string"},
+    "channel": {"enum": ["artifact", "git", "email", "slack"]},
+    "artifact_path": {"type": "string"},
+    "artifact_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "status": {"enum": ["pending", "acknowledged", "failed"]},
+    "created_at": {"type": "string", "format": "date-time"},
+    "acknowledged_at": {"type": ["string", "null"], "format": "date-time"}
+  }
+}

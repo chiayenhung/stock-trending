@@ -1,0 +1,24 @@
+schema_version: 1.0.0
+workflow_version: 2.2.0
+reference_market: XNAS
+default_mode: analysis_only
+live_enabled: false
+stages:
+  - ingest
+  - normalize
+  - screen
+  - analyze
+  - deterministic_validate
+  - cross_vendor_validate
+  - render
+  - artifact_qa
+  - finalize
+  - enqueue_publish
+retry_policy:
+  producer_attempts: 2
+  validator_attempts: 1
+  validator_unavailable: research_only
+state:
+  atomic_writes: true
+  dependency_hashes: true
+  lease_seconds: 300

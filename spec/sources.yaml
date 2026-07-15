@@ -1,0 +1,20 @@
+schema_version: 1.0.0
+sources:
+  demo_static:
+    enabled: true
+    provenance_class: fixture
+    retention: repository_fixture
+  broker_quotes:
+    enabled: false
+    credential_scope: read_only
+  news:
+    enabled: false
+    content_is_untrusted: true
+  industry:
+    enabled: false
+    content_is_untrusted: true
+  social:
+    enabled: false
+    content_is_untrusted: true
+    official_api_required: true
+    allowlist: []

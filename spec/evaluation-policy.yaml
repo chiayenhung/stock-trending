@@ -1,0 +1,19 @@
+schema_version: 1.0.0
+policy_version: 1.0.0
+horizons_sessions:
+  - 1
+  - 5
+include:
+  - fees
+  - slippage
+  - benchmark
+  - dividends
+  - corporate_actions
+minimum_gates:
+  schema_validity: 1.0
+  actionable_provenance_coverage: 1.0
+  actionable_cross_vendor_validation_coverage: 1.0
+  duplicate_side_effects: 0
+  reconciliation_required_before_submit: true
+  minimum_paper_sessions: 60
+  minimum_actionable_observations: 100

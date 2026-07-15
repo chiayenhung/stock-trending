@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stocktrend.local/schemas/cycle_context/1.0.0",
+  "title": "Cycle context",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "cycle_stage",
+    "direction_bias",
+    "summary",
+    "claim_fact_ids",
+    "limitations",
+    "producer"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "cycle_stage": {"enum": ["risk_on", "risk_off", "transition", "range_bound", "unknown"]},
+    "direction_bias": {"enum": ["bullish", "bearish", "neutral", "unknown"]},
+    "summary": {"type": "string", "minLength": 1},
+    "claim_fact_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "limitations": {"type": "array", "items": {"type": "string"}},
+    "producer": {"$ref": "#/$defs/producer"}
+  },
+  "$defs": {
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vendor", "model", "prompt_version"],
+      "properties": {
+        "vendor": {"type": "string"},
+        "model": {"type": "string"},
+        "prompt_version": {"type": "string"}
+      }
+    }
+  }
+}

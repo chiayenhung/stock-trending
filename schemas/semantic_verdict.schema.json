@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stocktrend.local/schemas/semantic_verdict/1.0.0",
+  "title": "Semantic verdict",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "target_id",
+    "verdict",
+    "supported_claim_ids",
+    "unsupported_claim_ids",
+    "reason_codes",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "target_id": {"type": "string"},
+    "verdict": {"enum": ["pass", "reject", "indeterminate"]},
+    "supported_claim_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "unsupported_claim_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "reason_codes": {"type": "array", "items": {"type": "string"}},
+    "summary": {"type": "string"}
+  }
+}

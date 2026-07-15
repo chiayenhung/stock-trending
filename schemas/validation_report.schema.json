@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stocktrend.local/schemas/validation_report/1.0.0",
+  "title": "Validation report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "target_id",
+    "producer",
+    "validator",
+    "vendor_separation",
+    "verdict",
+    "reason_codes",
+    "validated_at"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "target_id": {"type": "string"},
+    "producer": {"$ref": "#/$defs/model_identity"},
+    "validator": {"$ref": "#/$defs/model_identity"},
+    "vendor_separation": {"type": "boolean"},
+    "verdict": {"enum": ["pass", "reject", "indeterminate", "unavailable"]},
+    "reason_codes": {"type": "array", "items": {"type": "string"}},
+    "validated_at": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "model_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vendor", "model"],
+      "properties": {
+        "vendor": {"type": "string"},
+        "model": {"type": "string"}
+      }
+    }
+  }
+}

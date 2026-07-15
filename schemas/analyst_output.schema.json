@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stocktrend.local/schemas/analyst_output/1.0.0",
+  "title": "Analyst output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "analyst_output_id",
+    "instrument_id",
+    "symbol",
+    "score",
+    "recommended_signal",
+    "confidence_bucket",
+    "thesis",
+    "claims",
+    "entry_condition",
+    "maximum_entry_price",
+    "stop_price",
+    "target_price",
+    "time_exit_sessions",
+    "limitations",
+    "producer"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "analyst_output_id": {"type": "string", "minLength": 1},
+    "instrument_id": {"type": "string"},
+    "symbol": {"type": "string"},
+    "score": {"type": "number", "minimum": 1, "maximum": 10},
+    "recommended_signal": {
+      "enum": ["no_action", "watch", "enter_long", "add_long", "reduce", "exit"]
+    },
+    "confidence_bucket": {"enum": ["low", "medium", "high"]},
+    "thesis": {"type": "string"},
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim_id", "claim_type", "text", "supporting_fact_ids", "limitations"],
+        "properties": {
+          "claim_id": {"type": "string"},
+          "claim_type": {"type": "string"},
+          "text": {"type": "string"},
+          "supporting_fact_ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "limitations": {"type": "array", "items": {"type": "string"}}
+        }
+      },
+      "minItems": 1
+    },
+    "entry_condition": {"type": "string"},
+    "maximum_entry_price": {"type": ["number", "null"], "exclusiveMinimum": 0},
+    "stop_price": {"type": ["number", "null"], "exclusiveMinimum": 0},
+    "target_price": {"type": ["number", "null"], "exclusiveMinimum": 0},
+    "time_exit_sessions": {"type": "integer", "minimum": 1, "maximum": 30},
+    "limitations": {"type": "array", "items": {"type": "string"}},
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vendor", "model", "prompt_version"],
+      "properties": {
+        "vendor": {"type": "string"},
+        "model": {"type": "string"},
+        "prompt_version": {"type": "string"}
+      }
+    }
+  }
+}
