@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Any, Dict, List, Tuple
 
 from .providers import ScriptedClient
-from .util import parse_datetime, sha256_json
+from .util import sha256_json
 
 
 def create_demo_clients(
@@ -29,7 +28,7 @@ def create_demo_clients(
             "producer": {
                 "vendor": producer_vendor,
                 "model": "scripted-producer",
-                "prompt_version": "v1",
+                "prompt_version": "v2",
             },
         }
 
@@ -38,9 +37,8 @@ def create_demo_clients(
         symbol = candidate["symbol"]
         quote_id = candidate["quote_fact_id"]
         metrics_id = candidate["metrics_fact_id"]
-        price = float(candidate["price"])
         momentum = float(candidate["momentum_20d_pct"])
-        signal = "enter_long" if momentum >= 3.0 else "watch"
+        assessment = "positive_trend" if momentum >= 3.0 else "watch"
         prefix = sha256_json(
             {"symbol": symbol, "quote": quote_id, "metrics": metrics_id}
         )[:12]
@@ -61,78 +59,94 @@ def create_demo_clients(
                 "limitations": [],
             },
         ]
+        direction = "up" if assessment == "positive_trend" else "uncertain"
+        probabilities = (64.0, 59.0, 54.0) if direction == "up" else (50.0, 50.0, 50.0)
+        horizon_outlooks = [
+            {
+                "horizon_key": horizon_key,
+                "horizon_sessions": sessions,
+                "direction": direction,
+                "estimated_probability_pct": probability,
+                "probability_basis": "model_estimate_uncalibrated",
+                "supporting_claim_ids": [claim["claim_id"] for claim in claims],
+                "limitations": [
+                    "Offline model estimate without historical calibration."
+                ],
+            }
+            for horizon_key, sessions, probability in (
+                ("short_5d", 5, probabilities[0]),
+                ("medium_1m", 21, probabilities[1]),
+                ("cycle_3m", 63, probabilities[2]),
+            )
+        ]
         return {
-            "schema_version": "1.0.0",
+            "schema_version": "2.0.0",
             "analyst_output_id": "analysis_%s" % prefix,
             "instrument_id": candidate["instrument_id"],
             "symbol": symbol,
             "score": min(10.0, 5.0 + momentum / 2.0),
-            "recommended_signal": signal,
+            "assessment": assessment,
             "confidence_bucket": "medium",
-            "thesis": "Positive price momentum and relative volume may support a short swing continuation.",
+            "thesis": "Positive price momentum and relative volume warrant continued research monitoring.",
             "claims": claims,
-            "entry_condition": "Enter only at or below the proposed maximum price while liquidity remains valid.",
-            "maximum_entry_price": round(price * 1.01, 2),
-            "stop_price": round(price * 0.94, 2),
-            "target_price": round(price * 1.12, 2),
-            "time_exit_sessions": 5,
+            "horizon_sessions": 5,
+            "horizon_outlooks": horizon_outlooks,
+            "monitoring_triggers": [
+                "Reassess if 20-session momentum falls below the screening threshold.",
+                "Reassess if relative volume normalizes below the screening threshold.",
+            ],
             "limitations": ["Offline fixture; no current news or earnings calendar."],
             "producer": {
                 "vendor": producer_vendor,
                 "model": "scripted-producer",
-                "prompt_version": "v1",
+                "prompt_version": "v2",
             },
         }
 
     def synthesizer(payload: Dict[str, Any]) -> Dict[str, Any]:
         decision_at = payload["as_of"]
-        expires_at = (
-            parse_datetime(decision_at) + timedelta(hours=4)
-        ).isoformat().replace("+00:00", "Z")
-        proposals: List[Dict[str, Any]] = []
+        signals: List[Dict[str, Any]] = []
         for analyst in payload["analyst_outputs"]:
-            signal_id = "signal_%s" % sha256_json(
+            signal_id = "research_%s" % sha256_json(
                 {
                     "analysis": analyst["analyst_output_id"],
                     "decision_at": decision_at,
                 }
             )[:20]
-            proposals.append(
+            signals.append(
                 {
-                    "schema_version": "1.0.0",
-                    "signal_id": signal_id,
+                    "schema_version": "2.0.0",
+                    "research_signal_id": signal_id,
                     "revision": 1,
                     "strategy_id": payload["strategy"]["strategy_id"],
                     "strategy_version": payload["strategy"]["strategy_version"],
-                    "signal_type": analyst["recommended_signal"],
+                    "assessment": analyst["assessment"],
+                    "signal_strength_score": analyst["score"],
                     "instrument_id": analyst["instrument_id"],
                     "symbol": analyst["symbol"],
                     "venue": payload["candidate_venues"][analyst["symbol"]],
-                    "decision_at": decision_at,
-                    "expires_at": expires_at,
-                    "holding_horizon_sessions": analyst["time_exit_sessions"],
-                    "entry_condition": analyst["entry_condition"],
-                    "maximum_entry_price": analyst["maximum_entry_price"],
-                    "stop_price": analyst["stop_price"],
-                    "target_price": analyst["target_price"],
-                    "time_exit_sessions": analyst["time_exit_sessions"],
-                    "thesis_invalidation": "Exit if the stop is reached or the cited momentum condition no longer holds.",
+                    "assessed_at": decision_at,
+                    "horizon_sessions": analyst["horizon_sessions"],
+                    "horizon_outlooks": analyst["horizon_outlooks"],
+                    "thesis": analyst["thesis"],
+                    "monitoring_triggers": analyst["monitoring_triggers"],
                     "evidence_claim_ids": [
                         claim["claim_id"] for claim in analyst["claims"]
                     ],
                     "confidence_bucket": analyst["confidence_bucket"],
                     "known_gaps": list(analyst["limitations"]),
-                    "execution_eligible": False,
-                    "eligibility_reasons": ["PENDING_VALIDATION"],
+                    "research_only": True,
+                    "validation_status": "pending",
+                    "validation_reason_codes": [],
                     "producer": {
                         "vendor": producer_vendor,
                         "model": "scripted-producer",
-                        "prompt_version": "v1",
+                        "prompt_version": "v2",
                         "analyst_output_ids": [analyst["analyst_output_id"]],
                     },
                 }
             )
-        return {"proposals": proposals}
+        return {"signals": signals}
 
     def semantic_validator(payload: Dict[str, Any]) -> Dict[str, Any]:
         target = payload["target"]
@@ -149,7 +163,7 @@ def create_demo_clients(
         )
         return {
             "schema_version": "1.0.0",
-            "target_id": target["signal_id"],
+            "target_id": target["research_signal_id"],
             "verdict": "pass" if passed else "reject",
             "supported_claim_ids": supported,
             "unsupported_claim_ids": unsupported,

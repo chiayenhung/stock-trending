@@ -46,8 +46,7 @@
         "strategy_version",
         "venue",
         "exchange_session_date",
-        "analysis_window",
-        "execution_mode"
+        "analysis_window"
       ],
       "properties": {
         "workflow_version": {"type": "string"},
@@ -55,8 +54,7 @@
         "strategy_version": {"type": "string"},
         "venue": {"type": "string"},
         "exchange_session_date": {"type": "string", "format": "date"},
-        "analysis_window": {"type": "string"},
-        "execution_mode": {"enum": ["test", "analysis_only", "paper", "live", "backfill"]}
+        "analysis_window": {"type": "string"}
       }
     },
     "versions": {"type": "object"},

@@ -1,7 +1,7 @@
 # Claude host guidance
 
-This repository implements the fail-closed workflow in
-`stock-trend-workflow-plan-v2_2.md`.
+This repository implements the research-only workflow in
+`stock-trend-research-workflow-plan-v3_0.md`.
 
 When the outer task runs under Claude:
 
@@ -9,14 +9,14 @@ When the outer task runs under Claude:
   the independent validator: `stocktrend run --host claude ...`.
 - Never place `ANTHROPIC_API_KEY` into the Claude subscription producer
   subprocess.
-- Same-vendor validation is prohibited. Validator failure makes every proposal
-  research-only.
-- Live trading remains disabled.
+- Same-vendor validation is prohibited. Validator failure leaves each affected
+  research signal unavailable or indeterminate.
+- The repository contains research and delivery capabilities only.
 - After a run reaches `committed`, read both pending email requests reported by
   the CLI: `trending_analysis` and `system_logs`. Send each body and its
   attachments to the exact configured recipient through the authenticated mail
-  connector, and run `stocktrend email-ack` for each request only after the
-  connector confirms success.
+  connector, honoring `body_mime_type`, and run `stocktrend email-ack` for each
+  request only after the connector confirms success.
 - Completion logs must exclude credentials, raw provider prompts, and raw
   provider responses.
 

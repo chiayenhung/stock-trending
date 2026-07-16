@@ -23,13 +23,10 @@ def test_registry_loads_all_expected_contracts() -> None:
         "facts_block",
         "cycle_context",
         "analyst_output",
-        "signal_proposal",
+        "research_signal",
         "semantic_verdict",
         "validation_report",
         "run_manifest",
-        "execution_intent",
-        "approval_record",
-        "order_event",
         "outcome",
         "delivery_outbox_item",
         "email_delivery_request",
@@ -37,3 +34,9 @@ def test_registry_loads_all_expected_contracts() -> None:
         "source_snapshot",
         "source_heartbeat",
     }.issubset(set(registry.names()))
+    assert {
+        "approval_record",
+        "execution_intent",
+        "order_event",
+        "signal_proposal",
+    }.isdisjoint(set(registry.names()))

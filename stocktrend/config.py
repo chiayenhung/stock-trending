@@ -27,8 +27,6 @@ class ConfigBundle:
     root: Path
     workflow: Dict[str, Any]
     strategy: Dict[str, Any]
-    risk: Dict[str, Any]
-    approval: Dict[str, Any]
     evaluation: Dict[str, Any]
     tiers: Dict[str, Any]
     sources: Dict[str, Any]
@@ -41,8 +39,6 @@ class ConfigBundle:
             root=root,
             workflow=_load_yaml(spec / "workflow.yaml"),
             strategy=_load_yaml(spec / "strategy.yaml"),
-            risk=_load_yaml(spec / "risk-policy.yaml"),
-            approval=_load_yaml(spec / "approval-policy.yaml"),
             evaluation=_load_yaml(spec / "evaluation-policy.yaml"),
             tiers=_load_yaml(spec / "tiers.yaml"),
             sources=_load_yaml(spec / "sources.yaml"),
@@ -53,12 +49,26 @@ class ConfigBundle:
         return bundle
 
     def enforce_safety(self) -> None:
-        if self.workflow.get("live_enabled") is not False:
-            raise SafetyViolation("workflow live_enabled must remain false")
-        if self.risk.get("live_enabled") is not False:
-            raise SafetyViolation("risk policy live_enabled must remain false")
-        if self.risk.get("approved_for_live") is not False:
-            raise SafetyViolation("risk policy approved_for_live must remain false")
+        if self.workflow.get("scope") != "research_only":
+            raise SafetyViolation("workflow scope must remain research_only")
+        if self.strategy.get("status") != "research_only":
+            raise SafetyViolation("strategy status must remain research_only")
+        required_outlooks = {
+            "short_5d": 5,
+            "medium_1m": 21,
+            "cycle_3m": 63,
+        }
+        if self.strategy.get("outlook_horizons") != required_outlooks:
+            raise ConfigurationError(
+                "strategy must configure exact 5-, 21-, and 63-session outlooks"
+            )
+        if (
+            self.strategy.get("outlook_probability_basis")
+            != "model_estimate_uncalibrated"
+        ):
+            raise SafetyViolation(
+                "outlook probabilities must remain explicitly uncalibrated"
+            )
         validation = self.tiers.get("validation", {})
         if validation.get("require_different_vendor") is not True:
             raise ConfigurationError("different-vendor semantic validation is required")
@@ -158,7 +168,3 @@ class ConfigBundle:
         ]
         if len(symbols) != len(set(symbols)):
             raise ConfigurationError("universe symbols must be unique")
-
-    @property
-    def actionable_signals(self) -> set:
-        return set(self.strategy.get("actionable_signal_types", []))

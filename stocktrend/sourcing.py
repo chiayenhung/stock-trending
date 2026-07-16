@@ -913,7 +913,7 @@ def source_status(
         return {
             "heartbeat_present": False,
             "analysis_allowed": False,
-            "execution_source_ready": False,
+            "research_source_complete": False,
             "stale": True,
             "blocking_reasons": ["SOURCE_HEARTBEAT_MISSING"],
             "degraded_reasons": [],
@@ -963,7 +963,7 @@ def source_status(
     return {
         "heartbeat_present": True,
         "analysis_allowed": analysis_allowed,
-        "execution_source_ready": analysis_allowed
+        "research_source_complete": analysis_allowed
         and heartbeat["status"] == "success",
         "stale": stale,
         "blocking_reasons": sorted(set(blocking)),

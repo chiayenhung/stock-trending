@@ -36,12 +36,20 @@ def test_demo_workflow_finalizes_and_is_idempotent(
     second = workflow.run(document)
     assert first["run_id"] == second["run_id"]
     assert first["manifest"]["state"] == "committed"
-    proposals = load_json(
-        Path(first["run_directory"]) / "validation" / "signal_proposals.json"
-    )["signal_proposals"]
-    assert len(proposals) == 1
-    assert proposals[0]["symbol"] == "NVDA"
-    assert proposals[0]["execution_eligible"] is True
+    signals = load_json(
+        Path(first["run_directory"]) / "validation" / "research_signals.json"
+    )["research_signals"]
+    assert len(signals) == 1
+    assert signals[0]["symbol"] == "NVDA"
+    assert signals[0]["research_only"] is True
+    assert signals[0]["validation_status"] == "pass"
+    assert signals[0]["schema_version"] == "2.0.0"
+    assert signals[0]["signal_strength_score"] == 9.1
+    assert [item["horizon_sessions"] for item in signals[0]["horizon_outlooks"]] == [
+        5,
+        21,
+        63,
+    ]
     reports = load_json(
         Path(first["run_directory"]) / "validation" / "reports.json"
     )["reports"]
@@ -68,11 +76,12 @@ def test_same_vendor_forces_research_only(project_root: Path) -> None:
     workflow = AnalysisWorkflow(project_root, producer, validator)
     document = load_json(project_root / "tests" / "fixtures" / "demo_observations.json")
     result = workflow.run(document)
-    proposals = load_json(
-        Path(result["run_directory"]) / "validation" / "signal_proposals.json"
-    )["signal_proposals"]
-    assert proposals[0]["execution_eligible"] is False
-    assert "VENDOR_MATCH" in proposals[0]["eligibility_reasons"]
+    signals = load_json(
+        Path(result["run_directory"]) / "validation" / "research_signals.json"
+    )["research_signals"]
+    assert signals[0]["research_only"] is True
+    assert signals[0]["validation_status"] == "unavailable"
+    assert "VENDOR_MATCH" in signals[0]["validation_reason_codes"]
     assert "VALIDATOR_VENDOR_MATCH" in result["manifest"]["degraded_reasons"]
 
 
@@ -92,15 +101,48 @@ def test_validator_outage_forces_research_only(project_root: Path) -> None:
     workflow = AnalysisWorkflow(project_root, producer, validator)
     document = load_json(project_root / "tests" / "fixtures" / "demo_observations.json")
     result = workflow.run(document)
-    proposals = load_json(
-        Path(result["run_directory"]) / "validation" / "signal_proposals.json"
-    )["signal_proposals"]
-    assert proposals[0]["execution_eligible"] is False
-    assert "VALIDATOR_UNAVAILABLE" in proposals[0]["eligibility_reasons"]
+    signals = load_json(
+        Path(result["run_directory"]) / "validation" / "research_signals.json"
+    )["research_signals"]
+    assert signals[0]["research_only"] is True
+    assert signals[0]["validation_status"] == "unavailable"
+    assert "VALIDATOR_UNAVAILABLE" in signals[0]["validation_reason_codes"]
     assert "INDEPENDENT_VALIDATOR_UNAVAILABLE" in result["manifest"]["degraded_reasons"]
 
 
-def test_source_degradation_blocks_execution_eligibility(project_root: Path) -> None:
+def test_inconsistent_pass_verdict_is_indeterminate(project_root: Path) -> None:
+    producer, _ = create_demo_clients("openai", "anthropic")
+
+    def inconsistent(payload):
+        target = payload["target"]
+        return {
+            "schema_version": "1.0.0",
+            "target_id": target["research_signal_id"],
+            "verdict": "pass",
+            "supported_claim_ids": [],
+            "unsupported_claim_ids": list(target["evidence_claim_ids"]),
+            "reason_codes": ["UNSUPPORTED_CLAIMS_PRESENT"],
+            "summary": "Contradictory pass verdict.",
+        }
+
+    validator = ScriptedClient(
+        "anthropic",
+        "inconsistent-validator",
+        handlers={"semantic_validator": inconsistent},
+    )
+    result = AnalysisWorkflow(project_root, producer, validator).run(
+        load_json(project_root / "tests" / "fixtures" / "demo_observations.json")
+    )
+    signals = load_json(
+        Path(result["run_directory"]) / "validation" / "research_signals.json"
+    )["research_signals"]
+    assert signals[0]["validation_status"] == "indeterminate"
+    assert "VERDICT_CLAIM_COVERAGE_MISMATCH" in signals[0][
+        "validation_reason_codes"
+    ]
+
+
+def test_source_degradation_is_visible_on_research_run(project_root: Path) -> None:
     producer, validator = create_demo_clients("openai", "anthropic")
     workflow = AnalysisWorkflow(
         project_root,
@@ -110,8 +152,8 @@ def test_source_degradation_blocks_execution_eligibility(project_root: Path) -> 
     )
     document = load_json(project_root / "tests" / "fixtures" / "demo_observations.json")
     result = workflow.run(document)
-    proposals = load_json(
-        Path(result["run_directory"]) / "validation" / "signal_proposals.json"
-    )["signal_proposals"]
-    assert proposals[0]["execution_eligible"] is False
-    assert "SOURCE_COVERAGE_INCOMPLETE" in proposals[0]["eligibility_reasons"]
+    signals = load_json(
+        Path(result["run_directory"]) / "validation" / "research_signals.json"
+    )["research_signals"]
+    assert signals[0]["research_only"] is True
+    assert "SOURCE_COVERAGE_INCOMPLETE" in result["manifest"]["degraded_reasons"]

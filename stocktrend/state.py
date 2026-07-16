@@ -30,7 +30,6 @@ class RunIdentity:
     venue: str
     exchange_session_date: str
     analysis_window: str
-    execution_mode: str
 
     def logical_key(self) -> str:
         return sha256_json(asdict(self))
