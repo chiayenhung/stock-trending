@@ -88,25 +88,57 @@ class ConfigBundle:
                     "enabled %s content must remain untrusted" % name
                 )
             extraction = source.get("extraction", {})
-            if name in ("news", "industry"):
-                if extraction.get("method") != "deterministic_html":
+            if name in ("news", "industry", "social"):
+                expected_method = (
+                    "deterministic_browser_capture"
+                    if name == "social"
+                    else "deterministic_html"
+                )
+                if extraction.get("method") != expected_method:
                     raise ConfigurationError(
-                        "%s public-web extraction must be deterministic" % name
+                        "%s extraction must use %s" % (name, expected_method)
                     )
                 if extraction.get("llm_fallback_enabled") is not False:
                     raise SafetyViolation(
-                        "%s public-web LLM fallback must remain disabled" % name
+                        "%s enrichment LLM fallback must remain disabled" % name
                     )
                 if extraction.get("model") is not None:
                     raise SafetyViolation(
-                        "%s public-web extraction must not configure a model" % name
+                        "%s enrichment must not configure a model" % name
                     )
             if name == "news" and not source.get("user_agent_env"):
                 raise ConfigurationError(
                     "news public-web source must declare a user-agent environment variable"
                 )
-            if name == "social" and source.get("official_api_required") is not True:
-                raise SafetyViolation("social sourcing requires an official API")
+            if name == "social":
+                if source.get("browser_capture_required") is not True:
+                    raise SafetyViolation(
+                        "social sourcing requires an explicit browser capture"
+                    )
+                if source.get("adapter") != "x_browser_snapshot":
+                    raise ConfigurationError(
+                        "enabled social source must use the X browser snapshot adapter"
+                    )
+                allowed_host = str(source.get("allowed_host", "")).lower().rstrip(".")
+                allowlist = {
+                    str(item).lower().rstrip(".")
+                    for item in source.get("allowlist", [])
+                }
+                if allowlist and (
+                    not allowed_host or allowed_host not in allowlist
+                ):
+                    raise SafetyViolation(
+                        "social browser host must be explicitly allowlisted"
+                    )
+                if int(source.get("lookback_days", 0)) != 5:
+                    raise ConfigurationError(
+                        "X browser capture must use the configured five-day window"
+                    )
+                snapshot_path = str(source.get("snapshot_path", ""))
+                if not snapshot_path.startswith("state/social/"):
+                    raise SafetyViolation(
+                        "social browser snapshots must stay in operational state"
+                    )
         required_buckets = self.universe.get("required_buckets", [])
         if len(required_buckets) != len(set(required_buckets)):
             raise ConfigurationError("universe required buckets must be unique")

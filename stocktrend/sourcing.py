@@ -28,6 +28,7 @@ from .web_sources import (
     EiaIndustryAdapter,
     ReadOnlyEnrichmentAdapter,
     SecEdgarNewsAdapter,
+    XBrowserSnapshotAdapter,
 )
 
 
@@ -388,7 +389,7 @@ class SourceService:
         self.enrichment_adapters = (
             dict(enrichment_adapters)
             if enrichment_adapters is not None
-            else _create_enrichment_adapters(self.config.sources)
+            else _create_enrichment_adapters(self.root, self.config.sources)
         )
 
     def run(
@@ -829,6 +830,7 @@ def create_source_adapter(
 
 
 def _create_enrichment_adapters(
+    root: Path,
     sources_config: Mapping[str, Any],
 ) -> Dict[str, ReadOnlyEnrichmentAdapter]:
     adapters: Dict[str, ReadOnlyEnrichmentAdapter] = {}
@@ -866,6 +868,28 @@ def _create_enrichment_adapters(
             max_items=int(industry["max_items"]),
             applicable_buckets=list(industry["applicable_buckets"]),
             relevance_keywords=list(industry["relevance_keywords"]),
+        )
+    social = configured_sources.get("social", {})
+    if (
+        social.get("enabled") is True
+        and social.get("adapter") == "x_browser_snapshot"
+        and social.get("allowlist")
+    ):
+        adapters["social"] = XBrowserSnapshotAdapter(
+            profile_url=str(social["profile_url"]),
+            account=str(social["account"]),
+            allowed_host=str(social["allowed_host"]),
+            allowlist=list(social["allowlist"]),
+            snapshot_path=root / str(social["snapshot_path"]),
+            schema_dir=root / "schemas",
+            license_class=str(social["license_class"]),
+            snapshot_max_age_seconds=int(
+                social["snapshot_max_age_seconds"]
+            ),
+            lookback_days=int(social["lookback_days"]),
+            max_items_per_instrument=int(
+                social["max_items_per_instrument"]
+            ),
         )
     return adapters
 

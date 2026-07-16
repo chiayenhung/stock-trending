@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stocktrend.local/schemas/social_browser_snapshot/1.0.0",
+  "title": "Social Browser Snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "capture_method",
+    "account",
+    "profile_url",
+    "captured_at",
+    "window_start",
+    "window_end",
+    "posts"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "capture_method": {"const": "browser"},
+    "account": {"type": "string", "pattern": "^[A-Za-z0-9_]{1,15}$"},
+    "profile_url": {"type": "string", "format": "uri"},
+    "captured_at": {"type": "string", "format": "date-time"},
+    "window_start": {"type": "string", "format": "date-time"},
+    "window_end": {"type": "string", "format": "date-time"},
+    "posts": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["post_id", "url", "posted_at", "text"],
+        "properties": {
+          "post_id": {"type": "string", "pattern": "^[0-9]{1,32}$"},
+          "url": {"type": "string", "format": "uri"},
+          "posted_at": {"type": "string", "format": "date-time"},
+          "text": {"type": "string", "minLength": 1, "maxLength": 10000}
+        }
+      }
+    }
+  }
+}

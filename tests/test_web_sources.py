@@ -10,8 +10,12 @@ from stocktrend.sourcing import (
     SourceService,
     validate_run_input,
 )
-from stocktrend.util import parse_datetime
-from stocktrend.web_sources import EiaIndustryAdapter, SecEdgarNewsAdapter
+from stocktrend.util import atomic_write_json, parse_datetime
+from stocktrend.web_sources import (
+    EiaIndustryAdapter,
+    SecEdgarNewsAdapter,
+    XBrowserSnapshotAdapter,
+)
 
 
 SEC_HTML = """
@@ -52,6 +56,19 @@ EIA_HTML = """
   <p>Petroleum exports rose.</p>
 </body></html>
 """
+
+
+def _social_snapshot(posts: list) -> Dict[str, Any]:
+    return {
+        "schema_version": "1.0.0",
+        "capture_method": "browser",
+        "account": "aleabitoreddit",
+        "profile_url": "https://x.com/aleabitoreddit",
+        "captured_at": "2026-07-15T20:00:00Z",
+        "window_start": "2026-07-10T20:00:00Z",
+        "window_end": "2026-07-15T20:00:00Z",
+        "posts": posts,
+    }
 
 
 class FakeMarketDataAdapter(ReadOnlyMarketDataAdapter):
@@ -162,6 +179,139 @@ def test_eia_scrape_is_scoped_to_power_and_filters_irrelevant_articles() -> None
     assert adapter.model is None
 
 
+def test_x_browser_snapshot_is_bounded_and_filters_exact_cashtags(
+    project_root: Path,
+) -> None:
+    snapshot_path = project_root / "state" / "social" / "x_aleabitoreddit.json"
+    atomic_write_json(
+        snapshot_path,
+        _social_snapshot(
+            [
+                {
+                    "post_id": "103",
+                    "url": "https://x.com/aleabitoreddit/status/103",
+                    "posted_at": "2026-07-15T19:40:00Z",
+                    "text": "$AAPLX is a different symbol",
+                },
+                {
+                    "post_id": "102",
+                    "url": "https://x.com/aleabitoreddit/status/102",
+                    "posted_at": "2026-07-15T19:30:00Z",
+                    "text": "$AAPL and $NVDA supply-chain update",
+                },
+                {
+                    "post_id": "101",
+                    "url": "https://x.com/aleabitoreddit/status/101",
+                    "posted_at": "2026-07-15T18:30:00Z",
+                    "text": "Watching $aapl",
+                },
+                {
+                    "post_id": "100",
+                    "url": "https://x.com/aleabitoreddit/status/100",
+                    "posted_at": "2026-07-15T17:30:00Z",
+                    "text": "$AAPL older",
+                },
+            ]
+        ),
+    )
+    adapter = XBrowserSnapshotAdapter(
+        profile_url="https://x.com/aleabitoreddit",
+        account="aleabitoreddit",
+        allowed_host="x.com",
+        allowlist=["x.com"],
+        snapshot_path=snapshot_path,
+        schema_dir=project_root / "schemas",
+        license_class="test_public_social_content",
+        max_items_per_instrument=2,
+    )
+    result = adapter.fetch_observations(
+        [
+            {
+                "instrument_id": "US:XNAS:AAPL",
+                "symbol": "AAPL",
+                "venue": "XNAS",
+            },
+            {
+                "instrument_id": "US:XNAS:NVDA",
+                "symbol": "NVDA",
+                "venue": "XNAS",
+            },
+        ],
+        "2026-07-15",
+        "2026-07-15T20:00:00Z",
+    )
+    assert [
+        item["source"]["record_id"]
+        for item in result.observations
+    ] == ["102", "102", "101"]
+    assert result.observations[0]["fact_type"] == "social_post"
+    assert result.observations[0]["trust"] == {
+        "provenance_class": "public_social_browser",
+        "extraction_method": "deterministic",
+        "corroboration_state": "uncorroborated",
+    }
+    assert result.attempted == 1
+    assert result.failed == 0
+    assert adapter.model is None
+
+
+def test_x_browser_snapshot_missing_and_stale_are_fail_closed(
+    project_root: Path,
+) -> None:
+    snapshot_path = project_root / "state" / "social" / "x_aleabitoreddit.json"
+    adapter = XBrowserSnapshotAdapter(
+        profile_url="https://x.com/aleabitoreddit",
+        account="aleabitoreddit",
+        allowed_host="x.com",
+        allowlist=["x.com"],
+        snapshot_path=snapshot_path,
+        schema_dir=project_root / "schemas",
+        license_class="test_public_social_content",
+    )
+    result = adapter.fetch_observations(
+        [
+            {
+                "instrument_id": "US:XNAS:AAPL",
+                "symbol": "AAPL",
+                "venue": "XNAS",
+            },
+        ],
+        "2026-07-15",
+        "2026-07-15T20:00:00Z",
+    )
+    assert result.observations == []
+    assert result.attempted == 1
+    assert result.failed == 1
+    assert result.error_code == "SOCIAL_BROWSER_SNAPSHOT_MISSING"
+
+    atomic_write_json(
+        snapshot_path,
+        _social_snapshot(
+            [
+                {
+                    "post_id": "101",
+                    "url": "https://x.com/aleabitoreddit/status/101",
+                    "posted_at": "2026-07-15T19:30:00Z",
+                    "text": "$AAPL update",
+                }
+            ]
+        ),
+    )
+    stale = adapter.fetch_observations(
+        [
+            {
+                "instrument_id": "US:XNAS:AAPL",
+                "symbol": "AAPL",
+                "venue": "XNAS",
+            }
+        ],
+        "2026-07-15",
+        "2026-07-15T20:31:00Z",
+    )
+    assert stale.observations == []
+    assert stale.error_code == "SOCIAL_BROWSER_SNAPSHOT_STALE"
+
+
 def test_source_snapshot_includes_public_web_enrichments(project_root: Path) -> None:
     _enable_public_sources(project_root)
     sec = SecEdgarNewsAdapter(
@@ -206,6 +356,7 @@ def test_enabled_social_without_allowlist_is_explicitly_degraded(
     path = project_root / "spec" / "sources.yaml"
     value = yaml.safe_load(path.read_text(encoding="utf-8"))
     value["sources"]["social"]["enabled"] = True
+    value["sources"]["social"]["allowlist"] = []
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
     result = SourceService(
         project_root,
@@ -222,3 +373,64 @@ def test_enabled_social_without_allowlist_is_explicitly_degraded(
         "production",
         now=_clock(),
     ) == ["SOCIAL_SOURCE_UNAVAILABLE"]
+
+
+def test_source_snapshot_includes_x_browser_social_enrichment(
+    project_root: Path,
+) -> None:
+    path = project_root / "spec" / "sources.yaml"
+    value = yaml.safe_load(path.read_text(encoding="utf-8"))
+    value["sources"]["social"]["enabled"] = True
+    path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
+
+    universe = yaml.safe_load(
+        (project_root / "spec" / "universe.yaml").read_text(encoding="utf-8")
+    )
+    symbols = [item["symbol"] for item in universe["instruments"]]
+    snapshot_path = project_root / "state" / "social" / "x_aleabitoreddit.json"
+    atomic_write_json(
+        snapshot_path,
+        _social_snapshot(
+            [
+                {
+                    "post_id": "101",
+                    "url": "https://x.com/aleabitoreddit/status/101",
+                    "posted_at": "2026-07-15T19:30:00Z",
+                    "text": " ".join("$%s" % symbol for symbol in symbols),
+                }
+            ]
+        ),
+    )
+    social = XBrowserSnapshotAdapter(
+        profile_url="https://x.com/aleabitoreddit",
+        account="aleabitoreddit",
+        allowed_host="x.com",
+        allowlist=["x.com"],
+        snapshot_path=snapshot_path,
+        schema_dir=project_root / "schemas",
+        license_class="public_social_browser_content",
+    )
+    result = SourceService(
+        project_root,
+        FakeMarketDataAdapter(),
+        clock=_clock,
+        enrichment_adapters={"social": social},
+    ).run("2026-07-15")
+    document = result["document"]
+    social_status = document["source_snapshot"]["enrichments"]["social"]
+    assert social_status["status"] == "success"
+    assert social_status["observation_count"] == 25
+    assert social_status["attempted"] == 1
+    assert len(
+        [
+            item
+            for item in document["observations"]
+            if item["fact_type"] == "social_post"
+        ]
+    ) == 25
+    assert validate_run_input(
+        project_root,
+        document,
+        "production",
+        now=_clock(),
+    ) == []

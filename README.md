@@ -144,13 +144,52 @@ HTML sources without API credentials:
 - EIA Today in Energy articles relevant to electricity and generation become
   `industry_datapoint` facts for the power-infrastructure bucket.
 
-Both adapters reject redirects, allowlist their hosts, retain only normalized
-structured facts and source URLs, and treat all page text as untrusted data.
-Extraction is deterministic and makes no model call; the configured LLM
-fallback is intentionally disabled. An unavailable optional enrichment adds a
-degraded reason to analysis instead of being silently omitted. Social sourcing
-remains unavailable until an official adapter and non-empty allowlist are
-configured.
+The public enrichers reject redirects, allowlist their hosts, retain only
+normalized structured facts and source URLs, and treat all external content as
+untrusted data. Extraction is deterministic and makes no model call; the
+configured LLM fallback is intentionally disabled. An unavailable optional
+enrichment adds a degraded reason to analysis instead of being silently
+omitted.
+
+Social sourcing uses a host-browser capture of the public X account
+`@aleabitoreddit`. Before live sourcing, the Codex host captures posts visible
+in X's Latest search for the exact five-day window and stores only the bounded,
+normalized post snapshot under ignored `state/social/`. The CLI never receives
+browser credentials or session data. The adapter rejects stale snapshots,
+wrong accounts, non-X URLs, out-of-window posts, malformed post IDs, and text
+without an exact universe cashtag. Every accepted post is uncorroborated, and
+social-only evidence cannot support an actionable proposal.
+
+The browser host writes this contract to
+`state/social/x_aleabitoreddit.json`:
+
+~~~json
+{
+  "schema_version": "1.0.0",
+  "capture_method": "browser",
+  "account": "aleabitoreddit",
+  "profile_url": "https://x.com/aleabitoreddit",
+  "captured_at": "2026-07-16T06:30:00Z",
+  "window_start": "2026-07-11T06:30:00Z",
+  "window_end": "2026-07-16T06:30:00Z",
+  "posts": [
+    {
+      "post_id": "1234567890",
+      "url": "https://x.com/aleabitoreddit/status/1234567890",
+      "posted_at": "2026-07-15T18:00:00Z",
+      "text": "$NVDA example text"
+    }
+  ]
+}
+~~~
+
+Validate a capture before sourcing with:
+
+~~~bash
+.venv/bin/stocktrend validate \
+  --schema social_browser_snapshot \
+  state/social/x_aleabitoreddit.json
+~~~
 
 SEC requires automated tools to declare their identity and contact address.
 Set `STOCKTREND_SEC_USER_AGENT` to an application name plus a monitored contact

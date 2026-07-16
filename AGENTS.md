@@ -32,6 +32,12 @@ stock-trend-workflow-plan-v2_2.md.
   validator: `stocktrend run --host codex ...`.
 - Never place `OPENAI_API_KEY` or `CODEX_API_KEY` into the Codex subscription
   producer subprocess.
+- Before production live sourcing, use the authenticated browser to capture
+  `@aleabitoreddit` posts visible in X's Latest search for the rolling prior
+  five days. Store only the normalized `social_browser_snapshot` contract at
+  `state/social/x_aleabitoreddit.json`; never store cookies, tokens, page HTML,
+  screenshots, or browser session data. If X requires authentication, stop and
+  ask the user to sign in rather than switching sources or bypassing access.
 - After a run reaches `committed`, read both pending email requests reported by
   the CLI: `trending_analysis` and `system_logs`. Send each body and its
   attachments to the exact configured recipient through the authenticated mail

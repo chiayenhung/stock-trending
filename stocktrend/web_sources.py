@@ -7,13 +7,21 @@ import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from html.parser import HTMLParser
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 from urllib.parse import urlencode, urljoin, urlsplit
 
-from .errors import ConfigurationError, ProviderError, SafetyViolation
+from .contracts import SchemaRegistry
+from .errors import (
+    ConfigurationError,
+    ContractError,
+    ProviderError,
+    SafetyViolation,
+)
 from .security import validate_public_https_url
+from .util import load_json, parse_datetime
 
 
 class WebSourceError(ProviderError):
@@ -501,6 +509,228 @@ class EiaIndustryAdapter(ReadOnlyEnrichmentAdapter):
                 "provenance_class": "official_industry_publication",
                 "extraction_method": "deterministic",
                 "corroboration_state": "primary",
+            },
+        }
+
+
+class XBrowserSnapshotAdapter(ReadOnlyEnrichmentAdapter):
+    """Read a bounded X capture produced by the authenticated host browser."""
+
+    source_kind = "social"
+    adapter_id = "x_browser_snapshot"
+
+    def __init__(
+        self,
+        profile_url: str,
+        account: str,
+        allowed_host: str,
+        allowlist: Sequence[str],
+        snapshot_path: Path,
+        schema_dir: Path,
+        license_class: str,
+        snapshot_max_age_seconds: int = 1800,
+        lookback_days: int = 5,
+        max_items_per_instrument: int = 5,
+    ):
+        validate_public_https_url(profile_url)
+        parsed = urlsplit(profile_url)
+        normalized_host = (parsed.hostname or "").lower().rstrip(".")
+        normalized_allowlist = {
+            str(item).lower().rstrip(".") for item in allowlist
+        }
+        if normalized_host != allowed_host.lower().rstrip("."):
+            raise SafetyViolation("X profile host is not the configured host")
+        if normalized_host not in normalized_allowlist:
+            raise SafetyViolation("X profile host is not allowlisted")
+        if parsed.query or parsed.fragment:
+            raise SafetyViolation("X profile URL must not contain query or fragment")
+        if not re.fullmatch(r"[A-Za-z0-9_]{1,15}", account):
+            raise ConfigurationError("X account is invalid")
+        if parsed.path.rstrip("/") != "/%s" % account:
+            raise SafetyViolation("X profile URL does not match the configured account")
+        if snapshot_path.parent.name != "social" or (
+            snapshot_path.parent.parent.name != "state"
+        ):
+            raise SafetyViolation(
+                "social browser snapshot must stay under state/social"
+            )
+        if snapshot_max_age_seconds < 1 or snapshot_max_age_seconds > 3600:
+            raise ConfigurationError(
+                "social browser snapshot age must be between 1 and 3600 seconds"
+            )
+        if lookback_days != 5:
+            raise ConfigurationError("social browser lookback must be five days")
+        if max_items_per_instrument < 1 or max_items_per_instrument > 20:
+            raise ConfigurationError(
+                "social item limit must be between 1 and 20"
+            )
+        self.source_url = profile_url.rstrip("/")
+        self.account = account
+        self.allowed_host = normalized_host
+        self.snapshot_path = snapshot_path.resolve()
+        self.registry = SchemaRegistry(schema_dir)
+        self.license_class = license_class
+        self.snapshot_max_age_seconds = snapshot_max_age_seconds
+        self.lookback_days = lookback_days
+        self.max_items_per_instrument = max_items_per_instrument
+
+    def fetch_observations(
+        self,
+        instruments: Sequence[Mapping[str, Any]],
+        session_date: str,
+        retrieved_at: str,
+    ) -> EnrichmentFetchResult:
+        del session_date
+        try:
+            snapshot = self._load_snapshot(retrieved_at)
+            observations = self._observations(
+                snapshot,
+                instruments,
+                retrieved_at,
+            )
+        except WebSourceError as exc:
+            return EnrichmentFetchResult([], 1, 1, exc.code)
+        return EnrichmentFetchResult(observations, 1, 0, None)
+
+    def _load_snapshot(self, retrieved_at: str) -> Dict[str, Any]:
+        if not self.snapshot_path.exists():
+            raise WebSourceError("SOCIAL_BROWSER_SNAPSHOT_MISSING")
+        try:
+            value = load_json(self.snapshot_path)
+            self.registry.validate("social_browser_snapshot", value)
+            self._validate_snapshot(value, retrieved_at)
+        except WebSourceError:
+            raise
+        except (
+            ContractError,
+            OSError,
+            SafetyViolation,
+            TypeError,
+            ValueError,
+        ) as exc:
+            raise WebSourceError("SOCIAL_BROWSER_SNAPSHOT_INVALID") from exc
+        return value
+
+    def _validate_snapshot(
+        self,
+        snapshot: Mapping[str, Any],
+        retrieved_at: str,
+    ) -> None:
+        if snapshot.get("account") != self.account:
+            raise WebSourceError("SOCIAL_BROWSER_ACCOUNT_MISMATCH")
+        if str(snapshot.get("profile_url", "")).rstrip("/") != self.source_url:
+            raise WebSourceError("SOCIAL_BROWSER_PROFILE_MISMATCH")
+        retrieved = parse_datetime(retrieved_at)
+        captured = parse_datetime(str(snapshot["captured_at"]))
+        window_start = parse_datetime(str(snapshot["window_start"]))
+        window_end = parse_datetime(str(snapshot["window_end"]))
+        if captured > retrieved:
+            raise WebSourceError("SOCIAL_BROWSER_SNAPSHOT_FUTURE")
+        snapshot_age = (retrieved - captured).total_seconds()
+        if snapshot_age > self.snapshot_max_age_seconds:
+            raise WebSourceError("SOCIAL_BROWSER_SNAPSHOT_STALE")
+        if window_end != captured:
+            raise WebSourceError("SOCIAL_BROWSER_WINDOW_INVALID")
+        expected_seconds = self.lookback_days * 24 * 60 * 60
+        if (window_end - window_start).total_seconds() != expected_seconds:
+            raise WebSourceError("SOCIAL_BROWSER_WINDOW_INVALID")
+        seen = set()
+        for post in snapshot["posts"]:
+            post_id = str(post["post_id"])
+            if post_id in seen:
+                raise WebSourceError("SOCIAL_BROWSER_POST_DUPLICATE")
+            seen.add(post_id)
+            post_url = str(post["url"])
+            validate_public_https_url(post_url)
+            parsed = urlsplit(post_url)
+            if (parsed.hostname or "").lower().rstrip(".") != self.allowed_host:
+                raise WebSourceError("SOCIAL_BROWSER_POST_HOST_INVALID")
+            if parsed.query or parsed.fragment:
+                raise WebSourceError("SOCIAL_BROWSER_POST_URL_INVALID")
+            expected_path = "/%s/status/%s" % (self.account, post_id)
+            if parsed.path.rstrip("/") != expected_path:
+                raise WebSourceError("SOCIAL_BROWSER_POST_URL_INVALID")
+            posted_at = parse_datetime(str(post["posted_at"]))
+            if not window_start <= posted_at <= window_end:
+                raise WebSourceError("SOCIAL_BROWSER_POST_OUT_OF_WINDOW")
+            if posted_at > retrieved:
+                raise WebSourceError("SOCIAL_BROWSER_POST_FUTURE")
+
+    def _observations(
+        self,
+        snapshot: Mapping[str, Any],
+        instruments: Sequence[Mapping[str, Any]],
+        retrieved_at: str,
+    ) -> List[Dict[str, Any]]:
+        instrument_by_symbol = {
+            str(item["symbol"]).upper(): item for item in instruments
+        }
+        counts = {symbol: 0 for symbol in instrument_by_symbol}
+        rows = sorted(
+            snapshot["posts"],
+            key=lambda item: (parse_datetime(item["posted_at"]), item["post_id"]),
+            reverse=True,
+        )
+        observations: List[Dict[str, Any]] = []
+        for post in rows:
+            text = _normalize_text([str(post["text"])], maximum=1200)
+            cashtags = {
+                item.upper()
+                for item in re.findall(
+                    r"(?<![A-Za-z0-9])\$([A-Za-z][A-Za-z0-9.-]{0,15})(?![A-Za-z0-9])",
+                    text,
+                )
+            }
+            for symbol in sorted(cashtags & set(instrument_by_symbol)):
+                if counts[symbol] >= self.max_items_per_instrument:
+                    continue
+                observations.append(
+                    self._observation(
+                        instrument_by_symbol[symbol],
+                        post,
+                        text,
+                        retrieved_at,
+                    )
+                )
+                counts[symbol] += 1
+        return observations
+
+    def _observation(
+        self,
+        instrument: Mapping[str, Any],
+        post: Mapping[str, Any],
+        text: str,
+        retrieved_at: str,
+    ) -> Dict[str, Any]:
+        return {
+            "fact_type": "social_post",
+            "instrument_id": instrument["instrument_id"],
+            "symbol": instrument["symbol"],
+            "venue": instrument["venue"],
+            "observed_at": post["posted_at"],
+            "retrieved_at": retrieved_at,
+            "market_session": "non_market",
+            "value": {
+                "text_excerpt": text,
+                "account": "@%s" % self.account,
+                "post_id": post["post_id"],
+                "matched_cashtag": "$%s" % instrument["symbol"],
+                "capture_method": "browser",
+            },
+            "unit": None,
+            "currency": None,
+            "adjustment_status": "not_applicable",
+            "source": {
+                "provider": self.adapter_id,
+                "record_id": post["post_id"],
+                "url": post["url"],
+                "license_class": self.license_class,
+                "adapter_version": "1.0.0",
+            },
+            "trust": {
+                "provenance_class": "public_social_browser",
+                "extraction_method": "deterministic",
+                "corroboration_state": "uncorroborated",
             },
         }
 

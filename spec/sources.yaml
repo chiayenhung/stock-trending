@@ -51,8 +51,21 @@ sources:
   social:
     enabled: true
     content_is_untrusted: true
-    official_api_required: true
-    allowlist: []
+    browser_capture_required: true
+    adapter: x_browser_snapshot
+    profile_url: https://x.com/aleabitoreddit
+    account: aleabitoreddit
+    allowed_host: x.com
+    allowlist: [x.com]
+    snapshot_path: state/social/x_aleabitoreddit.json
+    snapshot_max_age_seconds: 1800
+    lookback_days: 5
+    max_items_per_instrument: 5
+    license_class: public_social_browser_content
+    extraction:
+      method: deterministic_browser_capture
+      llm_fallback_enabled: false
+      model: null
 production:
   approved_adapter: tiingo_market_data
   snapshot_max_age_seconds: 900
