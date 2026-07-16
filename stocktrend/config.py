@@ -53,6 +53,22 @@ class ConfigBundle:
             raise SafetyViolation("workflow scope must remain research_only")
         if self.strategy.get("status") != "research_only":
             raise SafetyViolation("strategy status must remain research_only")
+        required_outlooks = {
+            "short_5d": 5,
+            "medium_1m": 21,
+            "cycle_3m": 63,
+        }
+        if self.strategy.get("outlook_horizons") != required_outlooks:
+            raise ConfigurationError(
+                "strategy must configure exact 5-, 21-, and 63-session outlooks"
+            )
+        if (
+            self.strategy.get("outlook_probability_basis")
+            != "model_estimate_uncalibrated"
+        ):
+            raise SafetyViolation(
+                "outlook probabilities must remain explicitly uncalibrated"
+            )
         validation = self.tiers.get("validation", {})
         if validation.get("require_different_vendor") is not True:
             raise ConfigurationError("different-vendor semantic validation is required")

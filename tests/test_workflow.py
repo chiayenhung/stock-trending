@@ -43,6 +43,13 @@ def test_demo_workflow_finalizes_and_is_idempotent(
     assert signals[0]["symbol"] == "NVDA"
     assert signals[0]["research_only"] is True
     assert signals[0]["validation_status"] == "pass"
+    assert signals[0]["schema_version"] == "2.0.0"
+    assert signals[0]["signal_strength_score"] == 9.1
+    assert [item["horizon_sessions"] for item in signals[0]["horizon_outlooks"]] == [
+        5,
+        21,
+        63,
+    ]
     reports = load_json(
         Path(first["run_directory"]) / "validation" / "reports.json"
     )["reports"]

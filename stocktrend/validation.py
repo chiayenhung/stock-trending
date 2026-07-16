@@ -52,6 +52,25 @@ def deterministic_research_signal_errors(
     ):
         errors.append("RESEARCH_HORIZON_OUT_OF_POLICY")
 
+    configured_outlooks = strategy.get("outlook_horizons", {})
+    expected_outlooks = {
+        key: int(value) for key, value in configured_outlooks.items()
+    }
+    outlooks = signal.get("horizon_outlooks", [])
+    observed_outlook_keys = [item.get("horizon_key") for item in outlooks]
+    if len(observed_outlook_keys) != len(set(observed_outlook_keys)):
+        errors.append("DUPLICATE_OUTLOOK_HORIZON")
+    if set(observed_outlook_keys) != set(expected_outlooks):
+        errors.append("OUTLOOK_HORIZONS_INCOMPLETE")
+    signal_claim_ids = set(signal.get("evidence_claim_ids", []))
+    for outlook in outlooks:
+        key = outlook.get("horizon_key")
+        if key in expected_outlooks and outlook.get("horizon_sessions") != expected_outlooks[key]:
+            errors.append("OUTLOOK_HORIZON_SESSION_MISMATCH:%s" % key)
+        for claim_id in outlook.get("supporting_claim_ids", []):
+            if claim_id not in signal_claim_ids:
+                errors.append("OUTLOOK_CLAIM_NOT_CITED:%s" % claim_id)
+
     claim_items = list(claims)
     claim_ids = [claim["claim_id"] for claim in claim_items]
     if len(claim_ids) != len(set(claim_ids)):

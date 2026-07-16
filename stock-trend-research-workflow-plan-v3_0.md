@@ -49,10 +49,10 @@ Core principles:
 - market, filing, industry, and bounded social evidence;
 - deterministic momentum, relative-volume, price, and liquidity screening;
 - market-context and per-symbol research interpretation;
-- research trend signals with evidence, horizons, monitoring triggers, and
-  known gaps;
+- research trend signals with evidence, monitoring triggers, known gaps, and
+  uncalibrated 5-session, 21-session, and 63-session outlooks;
 - cross-vendor semantic validation;
-- deterministic Markdown and email packaging;
+- deterministic Markdown and HTML email packaging;
 - point-in-time assessment evaluation.
 
 ### 2.2 Excluded
@@ -86,6 +86,9 @@ Every research signal includes:
 - strategy ID and version;
 - instrument, ticker, and venue;
 - assessment timestamp and research horizon;
+- a 1-to-10 signal-strength score, explicitly not expected return;
+- 5-session short, 21-session medium, and 63-session cycle outlooks with
+  direction, uncalibrated likelihood, supporting claims, and limitations;
 - thesis and monitoring triggers;
 - evidence claim IDs and known gaps;
 - confidence bucket as an uncalibrated assessment;
@@ -228,6 +231,9 @@ Core v3 contracts:
 
 Every schema has a stable ID and semantic version. Breaking changes increment
 the major version and require explicit migration or archival-only handling.
+`analyst_output` and `research_signal` v2 add the three required horizon
+outlooks. `email_delivery_request` v2 adds an explicit HTML MIME type. Their v1
+documents are archival-only inputs and are not silently upgraded.
 
 ### 7.1 Fact lineage
 
@@ -299,8 +305,15 @@ Rendering is deterministic and template-based. Artifact QA checks:
 
 Each batch creates two packages before finalization:
 
-1. trending research analysis;
-2. sanitized system logs.
+1. an HTML trending research dashboard with up to five independently validated
+   positive-trend opportunities, all independently validated negative-trend
+   warnings, and the three horizon outlooks;
+2. HTML sanitized system logs with a JSON attachment.
+
+Ranked sections exclude rejected, indeterminate, and unavailable signals.
+Outlook percentages are always labeled as uncalibrated model estimates rather
+than historical win rates, expected returns, or profit guarantees. HTML
+rendering escapes all model-originated text and prohibits active content.
 
 Requests remain blocked until the manifest is committed. The host connector
 sends each package and records acknowledgement only after confirmed success.

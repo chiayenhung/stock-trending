@@ -28,7 +28,7 @@ def create_demo_clients(
             "producer": {
                 "vendor": producer_vendor,
                 "model": "scripted-producer",
-                "prompt_version": "v1",
+                "prompt_version": "v2",
             },
         }
 
@@ -59,8 +59,28 @@ def create_demo_clients(
                 "limitations": [],
             },
         ]
+        direction = "up" if assessment == "positive_trend" else "uncertain"
+        probabilities = (64.0, 59.0, 54.0) if direction == "up" else (50.0, 50.0, 50.0)
+        horizon_outlooks = [
+            {
+                "horizon_key": horizon_key,
+                "horizon_sessions": sessions,
+                "direction": direction,
+                "estimated_probability_pct": probability,
+                "probability_basis": "model_estimate_uncalibrated",
+                "supporting_claim_ids": [claim["claim_id"] for claim in claims],
+                "limitations": [
+                    "Offline model estimate without historical calibration."
+                ],
+            }
+            for horizon_key, sessions, probability in (
+                ("short_5d", 5, probabilities[0]),
+                ("medium_1m", 21, probabilities[1]),
+                ("cycle_3m", 63, probabilities[2]),
+            )
+        ]
         return {
-            "schema_version": "1.0.0",
+            "schema_version": "2.0.0",
             "analyst_output_id": "analysis_%s" % prefix,
             "instrument_id": candidate["instrument_id"],
             "symbol": symbol,
@@ -70,6 +90,7 @@ def create_demo_clients(
             "thesis": "Positive price momentum and relative volume warrant continued research monitoring.",
             "claims": claims,
             "horizon_sessions": 5,
+            "horizon_outlooks": horizon_outlooks,
             "monitoring_triggers": [
                 "Reassess if 20-session momentum falls below the screening threshold.",
                 "Reassess if relative volume normalizes below the screening threshold.",
@@ -78,7 +99,7 @@ def create_demo_clients(
             "producer": {
                 "vendor": producer_vendor,
                 "model": "scripted-producer",
-                "prompt_version": "v1",
+                "prompt_version": "v2",
             },
         }
 
@@ -94,17 +115,19 @@ def create_demo_clients(
             )[:20]
             signals.append(
                 {
-                    "schema_version": "1.0.0",
+                    "schema_version": "2.0.0",
                     "research_signal_id": signal_id,
                     "revision": 1,
                     "strategy_id": payload["strategy"]["strategy_id"],
                     "strategy_version": payload["strategy"]["strategy_version"],
                     "assessment": analyst["assessment"],
+                    "signal_strength_score": analyst["score"],
                     "instrument_id": analyst["instrument_id"],
                     "symbol": analyst["symbol"],
                     "venue": payload["candidate_venues"][analyst["symbol"]],
                     "assessed_at": decision_at,
                     "horizon_sessions": analyst["horizon_sessions"],
+                    "horizon_outlooks": analyst["horizon_outlooks"],
                     "thesis": analyst["thesis"],
                     "monitoring_triggers": analyst["monitoring_triggers"],
                     "evidence_claim_ids": [
@@ -118,7 +141,7 @@ def create_demo_clients(
                     "producer": {
                         "vendor": producer_vendor,
                         "model": "scripted-producer",
-                        "prompt_version": "v1",
+                        "prompt_version": "v2",
                         "analyst_output_ids": [analyst["analyst_output_id"]],
                     },
                 }

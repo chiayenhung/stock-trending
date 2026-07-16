@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://stocktrend.local/schemas/research_signal/1.0.0",
+  "$id": "https://stocktrend.local/schemas/research_signal/2.0.0",
   "title": "Research signal",
   "type": "object",
   "additionalProperties": false,
@@ -11,11 +11,13 @@
     "strategy_id",
     "strategy_version",
     "assessment",
+    "signal_strength_score",
     "instrument_id",
     "symbol",
     "venue",
     "assessed_at",
     "horizon_sessions",
+    "horizon_outlooks",
     "thesis",
     "monitoring_triggers",
     "evidence_claim_ids",
@@ -27,7 +29,7 @@
     "producer"
   ],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
+    "schema_version": {"const": "2.0.0"},
     "research_signal_id": {"type": "string", "minLength": 1},
     "revision": {"type": "integer", "minimum": 1},
     "strategy_id": {"type": "string"},
@@ -35,11 +37,13 @@
     "assessment": {
       "enum": ["no_action", "watch", "positive_trend", "negative_trend"]
     },
+    "signal_strength_score": {"type": "number", "minimum": 1, "maximum": 10},
     "instrument_id": {"type": "string"},
     "symbol": {"type": "string"},
     "venue": {"type": "string"},
     "assessed_at": {"type": "string", "format": "date-time"},
     "horizon_sessions": {"type": "integer", "minimum": 1, "maximum": 30},
+    "horizon_outlooks": {"$ref": "#/$defs/horizon_outlooks"},
     "thesis": {"type": "string", "minLength": 1},
     "monitoring_triggers": {
       "type": "array",
@@ -72,7 +76,57 @@
         "vendor": {"type": "string"},
         "model": {"type": "string"},
         "prompt_version": {"type": "string"},
-        "analyst_output_ids": {"type": "array", "items": {"type": "string"}}
+        "analyst_output_ids": {
+          "type": "array",
+          "items": {"type": "string"},
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    }
+  },
+  "$defs": {
+    "horizon_outlooks": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "horizon_key",
+          "horizon_sessions",
+          "direction",
+          "estimated_probability_pct",
+          "probability_basis",
+          "supporting_claim_ids",
+          "limitations"
+        ],
+        "properties": {
+          "horizon_key": {
+            "enum": ["short_5d", "medium_1m", "cycle_3m"]
+          },
+          "horizon_sessions": {"enum": [5, 21, 63]},
+          "direction": {"enum": ["up", "down", "uncertain"]},
+          "estimated_probability_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "probability_basis": {"const": "model_estimate_uncalibrated"},
+          "supporting_claim_ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "limitations": {
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 1,
+            "uniqueItems": true
+          }
+        }
       }
     }
   }

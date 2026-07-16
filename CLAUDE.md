@@ -15,8 +15,8 @@ When the outer task runs under Claude:
 - After a run reaches `committed`, read both pending email requests reported by
   the CLI: `trending_analysis` and `system_logs`. Send each body and its
   attachments to the exact configured recipient through the authenticated mail
-  connector, and run `stocktrend email-ack` for each request only after the
-  connector confirms success.
+  connector, honoring `body_mime_type`, and run `stocktrend email-ack` for each
+  request only after the connector confirms success.
 - Completion logs must exclude credentials, raw provider prompts, and raw
   provider responses.
 

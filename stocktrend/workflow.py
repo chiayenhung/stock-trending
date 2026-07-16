@@ -29,6 +29,8 @@ from .validation import (
 
 
 class AnalysisWorkflow:
+    PROMPT_VERSION = "v2"
+
     def __init__(
         self,
         root: Path,
@@ -55,7 +57,9 @@ class AnalysisWorkflow:
             else notification_recipient.strip()
         )
         self.prompts = {
-            name: (root / "prompts" / name / "v1.md").read_text(encoding="utf-8")
+            name: (
+                root / "prompts" / name / ("%s.md" % self.PROMPT_VERSION)
+            ).read_text(encoding="utf-8")
             for name in (
                 "market_context",
                 "stock_analyst",
@@ -95,7 +99,7 @@ class AnalysisWorkflow:
                     for path in sorted((self.root / "stocktrend").glob("*.py"))
                 }
             ),
-            "schemas": "1.0.0",
+            "schemas": "2.0.0",
             "schema_bundle_hash": sha256_json(
                 {name: self.registry.get(name) for name in self.registry.names()}
             ),
@@ -113,7 +117,7 @@ class AnalysisWorkflow:
             "producer_model": self.producer.model,
             "validator_vendor": self.validator_client.vendor_id,
             "validator_model": self.validator_client.model,
-            "prompt": "v1",
+            "prompt": self.PROMPT_VERSION,
             "prompt_bundle_hash": sha256_json(self.prompts),
             "initial_degraded_reasons": self.initial_degraded_reasons,
         }
@@ -382,6 +386,10 @@ class AnalysisWorkflow:
             )
             signals = synthesis["signals"]
         analysis_ids = {item["analyst_output_id"] for item in analysts}
+        analysis_scores = {
+            item["analyst_output_id"]: float(item["score"])
+            for item in analysts
+        }
         for signal in signals:
             signal["research_only"] = True
             signal["validation_status"] = "pending"
@@ -393,6 +401,11 @@ class AnalysisWorkflow:
                 for value in producer.get("analyst_output_ids", [])
                 if value in analysis_ids
             ]
+            if producer["analyst_output_ids"]:
+                signal["signal_strength_score"] = max(
+                    analysis_scores[value]
+                    for value in producer["analyst_output_ids"]
+                )
             self.registry.validate("research_signal", signal)
         return context, analysts, signals
 
@@ -450,7 +463,7 @@ class AnalysisWorkflow:
         return {
             "vendor": self.producer.vendor_id,
             "model": self.producer.model,
-            "prompt_version": "v1",
+            "prompt_version": self.PROMPT_VERSION,
         }
 
     def _result(self, run_id: str) -> Dict[str, Any]:

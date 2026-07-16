@@ -13,3 +13,7 @@ unavailable validation status. The adapter exposes no transaction capability.
 After the final committer succeeds, Codex sends the separate
 trending-analysis and system-log emails through its authenticated mail
 connector and acknowledges both durable email outbox items.
+The connector must send each `.html` body using the request's
+`body_mime_type` (`text/html; charset=utf-8`) and preserve the declared
+attachments. Ranked research sections contain only independently validated
+signals.

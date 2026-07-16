@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://stocktrend.local/schemas/analyst_output/1.0.0",
+  "$id": "https://stocktrend.local/schemas/analyst_output/2.0.0",
   "title": "Analyst output",
   "type": "object",
   "additionalProperties": false,
@@ -15,12 +15,13 @@
     "thesis",
     "claims",
     "horizon_sessions",
+    "horizon_outlooks",
     "monitoring_triggers",
     "limitations",
     "producer"
   ],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
+    "schema_version": {"const": "2.0.0"},
     "analyst_output_id": {"type": "string", "minLength": 1},
     "instrument_id": {"type": "string"},
     "symbol": {"type": "string"},
@@ -52,6 +53,7 @@
       "minItems": 1
     },
     "horizon_sessions": {"type": "integer", "minimum": 1, "maximum": 30},
+    "horizon_outlooks": {"$ref": "#/$defs/horizon_outlooks"},
     "monitoring_triggers": {
       "type": "array",
       "items": {"type": "string"},
@@ -67,6 +69,51 @@
         "vendor": {"type": "string"},
         "model": {"type": "string"},
         "prompt_version": {"type": "string"}
+      }
+    }
+  },
+  "$defs": {
+    "horizon_outlooks": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "horizon_key",
+          "horizon_sessions",
+          "direction",
+          "estimated_probability_pct",
+          "probability_basis",
+          "supporting_claim_ids",
+          "limitations"
+        ],
+        "properties": {
+          "horizon_key": {
+            "enum": ["short_5d", "medium_1m", "cycle_3m"]
+          },
+          "horizon_sessions": {"enum": [5, 21, 63]},
+          "direction": {"enum": ["up", "down", "uncertain"]},
+          "estimated_probability_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "probability_basis": {"const": "model_estimate_uncalibrated"},
+          "supporting_claim_ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "limitations": {
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 1,
+            "uniqueItems": true
+          }
+        }
       }
     }
   }

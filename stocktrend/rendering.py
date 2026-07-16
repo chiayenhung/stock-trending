@@ -8,6 +8,28 @@ from typing import Any, Dict, Iterable, List
 from .errors import ContractError
 
 
+OUTLOOK_LABELS = {
+    "short_5d": "5 sessions / short",
+    "medium_1m": "21 sessions / medium",
+    "cycle_3m": "63 sessions / cycle",
+}
+
+
+def _outlook_markdown(signal: Dict[str, Any]) -> str:
+    values = []
+    for outlook in signal.get("horizon_outlooks", []):
+        label = OUTLOOK_LABELS.get(outlook["horizon_key"], outlook["horizon_key"])
+        values.append(
+            "%s: %s %g%%"
+            % (
+                label,
+                outlook["direction"],
+                float(outlook["estimated_probability_pct"]),
+            )
+        )
+    return "; ".join(values) or "not available"
+
+
 def render_digest(
     template_path: Path,
     run_id: str,
@@ -30,6 +52,8 @@ def render_digest(
                     "- Research horizon: %s sessions"
                     % signal["horizon_sessions"],
                     "- Confidence assessment: %s" % signal["confidence_bucket"],
+                    "- Horizon outlooks (uncalibrated model estimates): %s"
+                    % _outlook_markdown(signal),
                     "- Validation status: %s" % signal["validation_status"],
                     "- Thesis: %s" % signal["thesis"],
                     "- Monitoring triggers: %s"

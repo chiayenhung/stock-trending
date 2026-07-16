@@ -7,6 +7,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .contracts import SchemaRegistry
+from .email_rendering import (
+    html_email_qa,
+    render_analysis_email,
+    render_system_logs_email,
+)
 from .state import RunStore
 from .util import (
     atomic_write_json,
@@ -37,6 +42,7 @@ def _research_signal_summary(signals: List[Dict[str, Any]]) -> List[Dict[str, An
             "research_only": item["research_only"],
             "validation_status": item["validation_status"],
             "validation_reason_codes": item["validation_reason_codes"],
+            "horizon_outlooks": item["horizon_outlooks"],
         }
         for item in signals
     ]
@@ -56,6 +62,7 @@ class CompletionEmailOutbox:
         recipient: str,
         subject: str,
         body_path: Path,
+        body_mime_type: str,
         attachment_paths: List[Path],
     ) -> Dict[str, Any]:
         fingerprint = sha256_json(
@@ -65,6 +72,7 @@ class CompletionEmailOutbox:
                 "email_kind": email_kind,
                 "recipient": recipient,
                 "subject": subject,
+                "body_mime_type": body_mime_type,
                 "body_hash": sha256_text(body_path.read_text(encoding="utf-8")),
                 "attachment_hashes": [
                     sha256_text(path.read_text(encoding="utf-8"))
@@ -81,7 +89,7 @@ class CompletionEmailOutbox:
         if item_path.exists():
             return load_json(item_path)
         item = {
-            "schema_version": "1.0.0",
+            "schema_version": "2.0.0",
             "operation_id": operation_id,
             "run_id": run_id,
             "batch_id": batch_id,
@@ -90,6 +98,7 @@ class CompletionEmailOutbox:
             "recipient": recipient,
             "subject": subject,
             "body_path": str(body_path),
+            "body_mime_type": body_mime_type,
             "attachment_paths": [str(path) for path in attachment_paths],
             "delivery_requires_state": "committed",
             "status": "blocked",
@@ -146,8 +155,8 @@ class CompletionEmailOutbox:
 class BatchEmailGenerator:
     """Generate two deterministic email packages before the committer runs."""
 
-    ANALYSIS_BODY = "rendered/emails/trending_analysis.md"
-    LOGS_BODY = "rendered/emails/system_logs.md"
+    ANALYSIS_BODY = "rendered/emails/trending_analysis.html"
+    LOGS_BODY = "rendered/emails/system_logs.html"
     SYSTEM_LOG = "rendered/emails/system_log.json"
 
     def __init__(
@@ -169,10 +178,10 @@ class BatchEmailGenerator:
         run_dir = self.store.run_dir(run_id)
         manifest = self.store.load_manifest(run_id)
         digest_path = run_dir / "rendered" / "digest.md"
-        digest = digest_path.read_text(encoding="utf-8")
         signals = load_json(
             run_dir / "validation" / "research_signals.json"
         )["research_signals"]
+        context = load_json(run_dir / "analysis" / "cycle_context.json")
         reports = load_json(run_dir / "validation" / "reports.json")["reports"]
         trace = load_json(run_dir / "trace" / "events.json")
         source_input = load_json(run_dir / "inputs" / "observations.json").get(
@@ -182,44 +191,35 @@ class BatchEmailGenerator:
         validated_count = sum(
             item["validation_status"] == "pass" for item in signals
         )
-        producer = manifest["versions"]
 
-        analysis_body = "\n".join(
-            [
-                "# Trending analysis results",
-                "",
-                "- Batch: `%s`" % batch_id,
-                "- Run: `%s`" % run_id,
-                "- Research signals passing validation: `%d/%d`"
-                % (validated_count, len(signals)),
-                "",
-                digest,
-            ]
+        analysis_body = render_analysis_email(
+            batch_id,
+            run_id,
+            manifest,
+            context,
+            signals,
+            screen_coverage,
+            source_input or {},
         )
-        logs_body = "\n".join(
-            [
-                "# System logs",
-                "",
-                "- Batch: `%s`" % batch_id,
-                "- Run: `%s`" % run_id,
-                "- Snapshot stage: `pre_committer`",
-                "- Producer: `%s / %s`"
-                % (producer["producer_vendor"], producer["producer_model"]),
-                "- Validator: `%s / %s`"
-                % (producer["validator_vendor"], producer["validator_model"]),
-                "- Degraded reasons: `%s`"
-                % (", ".join(manifest["degraded_reasons"]) or "none"),
-                "- Source coverage: `%s`"
-                % (
-                    source_input.get("coverage_status", "test_or_unspecified")
-                    if source_input
-                    else "test_or_unspecified"
-                ),
-                "",
-                "The sanitized system log is attached. Credentials and raw model payloads are excluded.",
-                "",
-            ]
+        logs_body = render_system_logs_email(
+            batch_id,
+            run_id,
+            manifest,
+            source_input or {},
+            len(signals),
+            validated_count,
         )
+        html_email_qa(
+            analysis_body,
+            (
+                "Top 5 Research Opportunities",
+                "Downside Risk Warnings",
+                "未來 5 天勝率（短線）",
+                "未來 1 個月勝率（中線）",
+                "未來 3 個月勝率（Cycle 反應）",
+            ),
+        )
+        html_email_qa(logs_body, ("System logs", "pre_committer"))
         system_log = {
             "schema_version": "1.0.0",
             "batch_id": batch_id,
@@ -253,8 +253,9 @@ class BatchEmailGenerator:
                 batch_id,
                 "trending_analysis",
                 recipient,
-                "Trending analysis results — batch %s" % batch_id,
+                "Stock trend research briefing — batch %s" % batch_id,
                 analysis_path,
+                "text/html; charset=utf-8",
                 [digest_path],
             ),
             self.outbox.enqueue(
@@ -264,6 +265,7 @@ class BatchEmailGenerator:
                 recipient,
                 "System logs — batch %s" % batch_id,
                 logs_path,
+                "text/html; charset=utf-8",
                 [system_log_path],
             ),
         ]

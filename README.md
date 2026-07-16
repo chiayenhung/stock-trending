@@ -12,7 +12,8 @@ It provides:
 - research-only trend signals linked to evidence claims;
 - independent cross-vendor semantic validation;
 - atomic manifests, checkpoints, hashes, and state transitions;
-- deterministic digests, sanitized logs, and durable email requests;
+- deterministic digests, HTML research dashboards, sanitized logs, and durable
+  email requests;
 - point-in-time evaluation of research assessments.
 
 The codebase has no transaction, account, position-sizing, or market-action
@@ -35,8 +36,8 @@ python3 -m venv .venv
 The demo uses an OpenAI-labeled scripted producer and an Anthropic-labeled
 scripted validator. It performs no network calls. Operational files are written
 under `state/`, while finalized publishable output is written under `artifacts/`.
-Each run generates two email packages: the research digest and sanitized system
-logs.
+Each run generates two HTML email packages: a validated research dashboard and
+sanitized system logs.
 
 ## Run from Codex
 
@@ -156,6 +157,8 @@ Every `research_signal` includes:
 
 - a positive, negative, watch, or no-action assessment;
 - an intended research horizon;
+- a 1-to-10 uncalibrated signal-strength score, not an expected-return score;
+- evidence-linked 5-session, 21-session, and 63-session outlooks;
 - a thesis and monitoring triggers;
 - evidence claim IDs and known gaps;
 - producer lineage;
@@ -165,7 +168,9 @@ Every `research_signal` includes:
 Deterministic checks enforce strategy version, assessment vocabulary, horizon,
 claim existence, fact lineage, and same-instrument evidence. The semantic
 validator receives only the signal, selected claims, and a minimized evidence
-packet. Its vendor must differ from the producer vendor.
+packet. Its vendor must differ from the producer vendor. Outlook percentages are
+stored as `model_estimate_uncalibrated`; they are research likelihood estimates,
+not historical win rates, expected returns, or profit guarantees.
 
 Validate a stored signal with:
 
@@ -179,12 +184,15 @@ Validate a stored signal with:
 
 Before the final committer, every batch generates:
 
-1. `trending_analysis.md`, containing the validated research digest.
-2. `system_logs.md`, with an attached sanitized `system_log.json`.
+1. `trending_analysis.html`, containing a responsive research dashboard with:
+   the top five validated positive-trend opportunities, validated negative-trend
+   warnings, and 5-session, 21-session, and 63-session likelihood outlooks. The
+   Markdown digest remains attached for evidence review.
+2. `system_logs.html`, with an attached sanitized `system_log.json`.
 
-Each request is durable, batch-scoped, and blocked until the run reaches
-`committed`. The host then sends it through an authenticated mail connector and
-acknowledges confirmed delivery:
+Each request declares `text/html; charset=utf-8`, is durable, batch-scoped, and
+is blocked until the run reaches `committed`. The host then sends it through an
+authenticated mail connector and acknowledges confirmed delivery:
 
 ~~~bash
 .venv/bin/stocktrend email-ack \
