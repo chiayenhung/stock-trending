@@ -256,7 +256,7 @@ def test_tiingo_adapter_uses_header_token_and_derives_metrics() -> None:
             return [
                 {
                     "ticker": "NVDA",
-                    "timestamp": "2026-07-15T19:59:30Z",
+                    "timestamp": "2026-07-15T15:59:30.123456789-04:00",
                     "tngoLast": 120.0,
                     "lqBidPrice": 119.9,
                     "lqAskPrice": 120.1,
@@ -274,6 +274,7 @@ def test_tiingo_adapter_uses_header_token_and_derives_metrics() -> None:
     )
     record = adapter.fetch_market_record({"symbol": "NVDA"}, "2026-07-15")
     assert record["quote"]["price"] == 120.0
+    assert parse_datetime(record["quote"]["observed_at"]).microsecond == 123456
     assert record["bar_metrics"]["average_volume_20d"] == 1_000.0
     assert record["bar_metrics"]["volume_ratio"] == 1.5
     assert record["bar_metrics"]["momentum_20d_pct"] == pytest.approx(20.0)

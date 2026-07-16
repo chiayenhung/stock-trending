@@ -5,10 +5,17 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+
+_ISO_FRACTION_PATTERN = re.compile(
+    r"^(?P<prefix>.*T\d{2}:\d{2}:\d{2})\.(?P<fraction>\d+)"
+    r"(?P<suffix>Z|[+-]\d{2}:\d{2})$"
+)
 
 
 def utc_now() -> datetime:
@@ -26,7 +33,15 @@ def utc_now_iso() -> str:
 
 
 def parse_datetime(value: str) -> datetime:
-    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    normalized = value
+    match = _ISO_FRACTION_PATTERN.match(normalized)
+    if match and len(match.group("fraction")) > 6:
+        normalized = "%s.%s%s" % (
+            match.group("prefix"),
+            match.group("fraction")[:6],
+            match.group("suffix"),
+        )
+    normalized = normalized[:-1] + "+00:00" if normalized.endswith("Z") else normalized
     parsed = datetime.fromisoformat(normalized)
     if parsed.tzinfo is None:
         raise ValueError("datetime must include a timezone: %s" % value)
