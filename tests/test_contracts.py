@@ -32,4 +32,8 @@ def test_registry_loads_all_expected_contracts() -> None:
         "order_event",
         "outcome",
         "delivery_outbox_item",
+        "email_delivery_request",
+        "universe",
+        "source_snapshot",
+        "source_heartbeat",
     }.issubset(set(registry.names()))

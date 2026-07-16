@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stocktrend.local/schemas/source_snapshot/1.0.0",
+  "title": "Production source snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "session_date", "as_of", "reference_venue", "analysis_window", "source_snapshot", "observations"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "session_date": {"type": "string", "format": "date"},
+    "as_of": {"type": "string", "format": "date-time"},
+    "reference_venue": {"type": "string", "minLength": 4},
+    "analysis_window": {"type": "string", "minLength": 1},
+    "source_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshot_id", "profile", "provider", "universe_id", "universe_version", "universe_hash", "created_at", "freshness_deadline", "observations_hash", "coverage_status", "coverage", "instrument_buckets", "errors"],
+      "properties": {
+        "snapshot_id": {"type": "string", "pattern": "^snapshot_[a-f0-9]{24}$"},
+        "profile": {"const": "production"},
+        "provider": {"type": "string", "minLength": 1},
+        "universe_id": {"type": "string", "minLength": 1},
+        "universe_version": {"type": "string", "minLength": 1},
+        "universe_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "created_at": {"type": "string", "format": "date-time"},
+        "freshness_deadline": {"type": "string", "format": "date-time"},
+        "observations_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "coverage_status": {"enum": ["ready", "incomplete"]},
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minimum_valid_per_bucket", "minimum_valid_total", "valid_total", "configured_total", "buckets"],
+          "properties": {
+            "minimum_valid_per_bucket": {"type": "integer", "minimum": 1},
+            "minimum_valid_total": {"type": "integer", "minimum": 1},
+            "valid_total": {"type": "integer", "minimum": 0},
+            "configured_total": {"type": "integer", "minimum": 0},
+            "buckets": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["configured", "attempted", "valid", "stale", "missing", "rejected"],
+                "properties": {
+                  "configured": {"type": "integer", "minimum": 0},
+                  "attempted": {"type": "integer", "minimum": 0},
+                  "valid": {"type": "integer", "minimum": 0},
+                  "stale": {"type": "integer", "minimum": 0},
+                  "missing": {"type": "integer", "minimum": 0},
+                  "rejected": {"type": "integer", "minimum": 0}
+                }
+              }
+            }
+          }
+        },
+        "instrument_buckets": {"type": "object", "additionalProperties": {"type": "string"}},
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["symbol", "bucket", "code"],
+            "properties": {
+              "symbol": {"type": "string"},
+              "bucket": {"type": "string"},
+              "code": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["fact_type", "instrument_id", "symbol", "venue", "observed_at", "retrieved_at", "value", "source", "trust"]
+      }
+    }
+  }
+}

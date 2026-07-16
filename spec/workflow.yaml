@@ -4,6 +4,8 @@ reference_market: XNAS
 default_mode: analysis_only
 live_enabled: false
 stages:
+  - source_snapshot
+  - source_coverage_gate
   - ingest
   - normalize
   - screen
@@ -12,8 +14,10 @@ stages:
   - cross_vendor_validate
   - render
   - artifact_qa
+  - generate_trending_analysis_email
+  - generate_system_logs_email
   - finalize
-  - enqueue_publish
+  - committer
 retry_policy:
   producer_attempts: 2
   validator_attempts: 1
@@ -22,3 +26,10 @@ state:
   atomic_writes: true
   dependency_hashes: true
   lease_seconds: 300
+notifications:
+  summary_email_recipient: hodalalala@gmail.com
+  delivery: host_connector
+  emails_per_batch:
+    - trending_analysis
+    - system_logs
+  delivery_requires_state: committed

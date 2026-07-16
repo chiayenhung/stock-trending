@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Mapping, Optional
 
 
 def screen_candidates(
     facts_block: Dict[str, Any],
     strategy: Dict[str, Any],
+    instrument_buckets: Optional[Mapping[str, str]] = None,
 ) -> List[Dict[str, Any]]:
     grouped: Dict[str, Dict[str, Dict[str, Any]]] = {}
     for fact in facts_block["facts"]:
@@ -40,6 +41,59 @@ def screen_candidates(
                     "average_volume_20d": average_volume,
                     "volume_ratio": volume_ratio,
                     "momentum_20d_pct": momentum,
+                    "industry_bucket": (instrument_buckets or {}).get(
+                        quote["instrument_id"], "unclassified"
+                    ),
                 }
             )
-    return candidates
+    candidates.sort(key=_candidate_rank)
+    selection = strategy.get("candidate_selection", {})
+    maximum_per_bucket = int(selection.get("maximum_per_bucket", len(candidates) or 1))
+    maximum_total = int(selection.get("maximum_total", len(candidates) or 1))
+    bucket_counts: Dict[str, int] = {}
+    selected = []
+    for candidate in candidates:
+        bucket = candidate["industry_bucket"]
+        if bucket_counts.get(bucket, 0) >= maximum_per_bucket:
+            continue
+        selected.append(candidate)
+        bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
+    return sorted(selected, key=_candidate_rank)[:maximum_total]
+
+
+def screening_coverage(
+    source_coverage: Optional[Dict[str, Any]],
+    candidates: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    if source_coverage is None:
+        return {
+            "profile": "test_or_unspecified",
+            "buckets": {
+                "unclassified": {
+                    "configured": 0,
+                    "attempted": 0,
+                    "valid": 0,
+                    "passing_screen": len(candidates),
+                }
+            },
+        }
+    buckets = {}
+    for bucket, counts in source_coverage["buckets"].items():
+        buckets[bucket] = {
+            "configured": counts["configured"],
+            "attempted": counts["attempted"],
+            "valid": counts["valid"],
+            "passing_screen": sum(
+                1 for candidate in candidates if candidate["industry_bucket"] == bucket
+            ),
+        }
+    return {"profile": "production", "buckets": buckets}
+
+
+def _candidate_rank(candidate: Dict[str, Any]) -> tuple:
+    return (
+        -float(candidate["momentum_20d_pct"]),
+        -float(candidate["volume_ratio"]),
+        -float(candidate["average_volume_20d"]),
+        candidate["symbol"],
+    )

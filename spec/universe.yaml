@@ -1,0 +1,51 @@
+schema_version: 1.0.0
+universe_id: us_ai_infrastructure_v1
+universe_version: 1.0.0
+reviewed_at: "2026-07-15"
+review_frequency_days: 90
+required_buckets:
+  - semiconductor
+  - memory_storage
+  - power_infrastructure
+  - software
+coverage:
+  minimum_valid_per_bucket: 4
+  minimum_valid_total: 20
+candidate_selection:
+  maximum_per_bucket: 3
+  maximum_total: 12
+  ranking:
+    - field: momentum_20d_pct
+      direction: descending
+    - field: volume_ratio
+      direction: descending
+    - field: average_volume_20d
+      direction: descending
+    - field: symbol
+      direction: ascending
+instruments:
+  - {instrument_id: "US:XNAS:NVDA", symbol: NVDA, venue: XNAS, asset_type: common_stock, bucket: semiconductor, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNAS:AMD", symbol: AMD, venue: XNAS, asset_type: common_stock, bucket: semiconductor, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNAS:AVGO", symbol: AVGO, venue: XNAS, asset_type: common_stock, bucket: semiconductor, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNAS:QCOM", symbol: QCOM, venue: XNAS, asset_type: common_stock, bucket: semiconductor, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNYS:TSM", symbol: TSM, venue: XNYS, asset_type: adr, bucket: semiconductor, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNAS:ASML", symbol: ASML, venue: XNAS, asset_type: adr, bucket: semiconductor, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNAS:AMAT", symbol: AMAT, venue: XNAS, asset_type: common_stock, bucket: semiconductor, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNAS:LRCX", symbol: LRCX, venue: XNAS, asset_type: common_stock, bucket: semiconductor, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNAS:MU", symbol: MU, venue: XNAS, asset_type: common_stock, bucket: memory_storage, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNAS:WDC", symbol: WDC, venue: XNAS, asset_type: common_stock, bucket: memory_storage, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNAS:STX", symbol: STX, venue: XNAS, asset_type: common_stock, bucket: memory_storage, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNAS:MRVL", symbol: MRVL, venue: XNAS, asset_type: common_stock, bucket: memory_storage, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNAS:SIMO", symbol: SIMO, venue: XNAS, asset_type: adr, bucket: memory_storage, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNYS:VRT", symbol: VRT, venue: XNYS, asset_type: common_stock, bucket: power_infrastructure, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNYS:ETN", symbol: ETN, venue: XNYS, asset_type: common_stock, bucket: power_infrastructure, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNYS:PWR", symbol: PWR, venue: XNYS, asset_type: common_stock, bucket: power_infrastructure, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNYS:GEV", symbol: GEV, venue: XNYS, asset_type: common_stock, bucket: power_infrastructure, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNAS:CEG", symbol: CEG, venue: XNAS, asset_type: common_stock, bucket: power_infrastructure, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNAS:MSFT", symbol: MSFT, venue: XNAS, asset_type: common_stock, bucket: software, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNYS:ORCL", symbol: ORCL, venue: XNYS, asset_type: common_stock, bucket: software, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNYS:NOW", symbol: NOW, venue: XNYS, asset_type: common_stock, bucket: software, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNAS:PLTR", symbol: PLTR, venue: XNAS, asset_type: common_stock, bucket: software, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNAS:CRWD", symbol: CRWD, venue: XNAS, asset_type: common_stock, bucket: software, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNYS:SNOW", symbol: SNOW, venue: XNYS, asset_type: common_stock, bucket: software, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}
+  - {instrument_id: "US:XNAS:DDOG", symbol: DDOG, venue: XNAS, asset_type: common_stock, bucket: software, classification_source: internal_review, effective_from: "2026-01-01", effective_to: null, active: true}

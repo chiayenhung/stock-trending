@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stocktrend.local/schemas/email_delivery_request/1.0.0",
+  "title": "Email delivery request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation_id",
+    "run_id",
+    "batch_id",
+    "channel",
+    "email_kind",
+    "recipient",
+    "subject",
+    "body_path",
+    "attachment_paths",
+    "delivery_requires_state",
+    "status",
+    "created_at",
+    "acknowledged_at",
+    "provider_message_id"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "operation_id": {"type": "string"},
+    "run_id": {"type": "string"},
+    "batch_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "channel": {"const": "email"},
+    "email_kind": {"enum": ["trending_analysis", "system_logs"]},
+    "recipient": {"type": "string", "format": "email"},
+    "subject": {"type": "string", "minLength": 1},
+    "body_path": {"type": "string", "minLength": 1},
+    "attachment_paths": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "delivery_requires_state": {"const": "committed"},
+    "status": {"enum": ["blocked", "pending", "acknowledged", "failed"]},
+    "created_at": {"type": "string", "format": "date-time"},
+    "acknowledged_at": {"type": ["string", "null"], "format": "date-time"},
+    "provider_message_id": {"type": ["string", "null"]}
+  }
+}

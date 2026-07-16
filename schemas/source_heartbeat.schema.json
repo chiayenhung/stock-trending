@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stocktrend.local/schemas/source_heartbeat/1.0.0",
+  "title": "Source heartbeat",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "heartbeat_id", "provider", "universe_version", "status", "started_at", "completed_at", "snapshot_id", "snapshot_path", "snapshot_hash", "coverage_status", "error_code"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "heartbeat_id": {"type": "string", "pattern": "^heartbeat_[a-f0-9]{24}$"},
+    "provider": {"type": "string", "minLength": 1},
+    "universe_version": {"type": "string", "minLength": 1},
+    "status": {"enum": ["running", "success", "incomplete", "failed"]},
+    "started_at": {"type": "string", "format": "date-time"},
+    "completed_at": {"type": ["string", "null"], "format": "date-time"},
+    "snapshot_id": {"type": ["string", "null"]},
+    "snapshot_path": {"type": ["string", "null"]},
+    "snapshot_hash": {"type": ["string", "null"]},
+    "coverage_status": {"type": ["string", "null"]},
+    "error_code": {"type": ["string", "null"]}
+  }
+}

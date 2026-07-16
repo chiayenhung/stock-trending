@@ -8,6 +8,7 @@ from typing import Any, Dict
 
 import yaml
 
+from .contracts import SchemaRegistry
 from .errors import ConfigurationError, SafetyViolation
 
 
@@ -31,6 +32,7 @@ class ConfigBundle:
     evaluation: Dict[str, Any]
     tiers: Dict[str, Any]
     sources: Dict[str, Any]
+    universe: Dict[str, Any]
 
     @classmethod
     def load(cls, root: Path) -> "ConfigBundle":
@@ -44,7 +46,9 @@ class ConfigBundle:
             evaluation=_load_yaml(spec / "evaluation-policy.yaml"),
             tiers=_load_yaml(spec / "tiers.yaml"),
             sources=_load_yaml(spec / "sources.yaml"),
+            universe=_load_yaml(spec / "universe.yaml"),
         )
+        SchemaRegistry(root / "schemas").validate("universe", bundle.universe)
         bundle.enforce_safety()
         return bundle
 
@@ -60,6 +64,39 @@ class ConfigBundle:
             raise ConfigurationError("different-vendor semantic validation is required")
         if validation.get("unavailable_policy") != "research_only":
             raise ConfigurationError("validator unavailable policy must be research_only")
+        production = self.sources.get("production", {})
+        approved_adapter = production.get("approved_adapter")
+        adapters = self.sources.get("adapters", {})
+        if approved_adapter not in adapters:
+            raise ConfigurationError("approved source adapter is not configured")
+        for name, adapter in adapters.items():
+            if adapter.get("credential_scope") != "read_only":
+                raise SafetyViolation(
+                    "source adapter %s must use read-only credentials" % name
+                )
+            if adapter.get("redirects_allowed") is not False:
+                raise SafetyViolation(
+                    "source adapter %s must reject redirects" % name
+                )
+        required_buckets = self.universe.get("required_buckets", [])
+        if len(required_buckets) != len(set(required_buckets)):
+            raise ConfigurationError("universe required buckets must be unique")
+        configured_buckets = {
+            item.get("bucket")
+            for item in self.universe.get("instruments", [])
+            if item.get("active") is True
+        }
+        missing_buckets = set(required_buckets) - configured_buckets
+        if missing_buckets:
+            raise ConfigurationError(
+                "universe is missing required buckets: %s"
+                % ", ".join(sorted(missing_buckets))
+            )
+        symbols = [
+            item.get("symbol") for item in self.universe.get("instruments", [])
+        ]
+        if len(symbols) != len(set(symbols)):
+            raise ConfigurationError("universe symbols must be unique")
 
     @property
     def actionable_signals(self) -> set:

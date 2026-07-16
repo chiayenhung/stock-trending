@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
 
+from .committer import ArtifactCommitter
 from .config import ConfigBundle
 from .contracts import SchemaRegistry
 from .errors import ContractError
 from .facts import FactsBuilder
-from .outbox import PublicationOutbox
+from .notifications import (
+    BatchEmailGenerator,
+    CompletionEmailOutbox,
+    configured_recipient,
+    load_batch_email_requests,
+)
 from .providers import JsonModelClient
 from .rendering import artifact_qa, render_digest
-from .screening import screen_candidates
+from .screening import screen_candidates, screening_coverage
 from .state import RunIdentity, RunStore
 from .util import load_json, sha256_json
 from .validation import (
@@ -27,6 +34,8 @@ class AnalysisWorkflow:
         root: Path,
         producer: JsonModelClient,
         validator: JsonModelClient,
+        notification_recipient: Optional[str] = None,
+        initial_degraded_reasons: Optional[List[str]] = None,
     ):
         self.root = root
         self.config = ConfigBundle.load(root)
@@ -39,6 +48,12 @@ class AnalysisWorkflow:
         )
         self.producer = producer
         self.validator_client = validator
+        self.initial_degraded_reasons = sorted(set(initial_degraded_reasons or []))
+        self.notification_recipient = (
+            configured_recipient(self.config.workflow)
+            if notification_recipient is None
+            else notification_recipient.strip()
+        )
         self.prompts = {
             name: (root / "prompts" / name / "v1.md").read_text(encoding="utf-8")
             for name in (
@@ -88,20 +103,30 @@ class AnalysisWorkflow:
             ),
             "strategy": self.config.strategy["strategy_version"],
             "strategy_hash": sha256_json(self.config.strategy),
+            "universe": self.config.universe["universe_version"],
+            "universe_hash": sha256_json(self.config.universe),
             "risk_policy_hash": sha256_json(self.config.risk),
             "approval_policy_hash": sha256_json(self.config.approval),
             "tier_policy_hash": sha256_json(self.config.tiers),
             "workflow": str(self.config.workflow["workflow_version"]),
+            "workflow_hash": sha256_json(self.config.workflow),
+            "notification_recipient_hash": sha256_json(
+                {"recipient": self.notification_recipient}
+            ),
             "producer_vendor": self.producer.vendor_id,
             "producer_model": self.producer.model,
             "validator_vendor": self.validator_client.vendor_id,
             "validator_model": self.validator_client.model,
             "prompt": "v1",
             "prompt_bundle_hash": sha256_json(self.prompts),
+            "initial_degraded_reasons": self.initial_degraded_reasons,
         }
         manifest = self.store.create_or_resume(identity, versions, run_revision)
         run_id = manifest["run_id"]
-        if manifest["state"] == "finalized":
+        for reason in self.initial_degraded_reasons:
+            self.store.add_degraded_reason(run_id, reason)
+        manifest = self.store.load_manifest(run_id)
+        if manifest["state"] == "committed":
             return self._result(run_id)
         if manifest["state"] == "failed":
             raise ContractError("cannot resume failed run without a new revision")
@@ -110,7 +135,7 @@ class AnalysisWorkflow:
                 self._run_stages(run_id, input_document, as_of, session_date)
             except Exception:
                 current = self.store.load_manifest(run_id)
-                if current["state"] not in ("failed", "finalized"):
+                if current["state"] not in ("failed", "committed"):
                     self.store.transition(run_id, "failed")
                 raise
         return self._result(run_id)
@@ -146,18 +171,31 @@ class AnalysisWorkflow:
             )
 
         if manifest["state"] == "normalized":
-            candidates = screen_candidates(facts_block, self.config.strategy)
+            source_metadata = input_document.get("source_snapshot", {})
+            candidates = screen_candidates(
+                facts_block,
+                self.config.strategy,
+                source_metadata.get("instrument_buckets"),
+            )
+            coverage = screening_coverage(
+                source_metadata.get("coverage"),
+                candidates,
+            )
             self.store.write_json(
                 run_id,
                 "screen/candidates.json",
                 {"schema_version": "1.0.0", "candidates": candidates},
             )
+            self.store.write_json(run_id, "screen/coverage.json", coverage)
             self.store.transition(run_id, "screened")
             manifest = self.store.load_manifest(run_id)
         else:
             candidates = load_json(
                 self.store.run_dir(run_id) / "screen" / "candidates.json"
             )["candidates"]
+            coverage = load_json(
+                self.store.run_dir(run_id) / "screen" / "coverage.json"
+            )
 
         if manifest["state"] == "screened":
             context, analysts, proposals = self._analyze(
@@ -235,6 +273,7 @@ class AnalysisWorkflow:
                 validated,
                 reports,
                 degraded,
+                coverage,
             )
             artifact_qa(
                 digest,
@@ -246,14 +285,36 @@ class AnalysisWorkflow:
             manifest = self.store.load_manifest(run_id)
 
         if manifest["state"] == "rendered":
+            batch_id = str(input_document.get("batch_id") or run_id)
+            BatchEmailGenerator(self.root, self.store, self.registry).generate(
+                run_id,
+                batch_id,
+                self.notification_recipient,
+            )
+            self.store.transition(run_id, "emails_generated")
+            manifest = self.store.load_manifest(run_id)
+
+        if manifest["state"] == "emails_generated":
             self.store.transition(run_id, "finalized")
             finalized = self.store.load_manifest(run_id)
             self.registry.validate("run_manifest", finalized)
-            digest_path = self.store.run_dir(run_id) / "rendered" / "digest.md"
-            digest_hash = finalized["artifact_hashes"]["rendered/digest.md"]
-            outbox = PublicationOutbox(self.root, self.registry)
-            item = outbox.enqueue_artifact(run_id, digest_path, digest_hash)
-            outbox.publish_artifact(item)
+            manifest = finalized
+
+        if manifest["state"] == "finalized":
+            ArtifactCommitter(self.root, self.store, self.registry).commit(
+                run_id,
+                [
+                    "rendered/digest.md",
+                    BatchEmailGenerator.ANALYSIS_BODY,
+                    BatchEmailGenerator.LOGS_BODY,
+                    BatchEmailGenerator.SYSTEM_LOG,
+                ],
+            )
+            self.store.transition(run_id, "committed")
+            self.registry.validate("run_manifest", self.store.load_manifest(run_id))
+            CompletionEmailOutbox(self.root, self.registry).activate_for_committed_run(
+                run_id
+            )
 
     def _analyze(
         self,
@@ -364,13 +425,21 @@ class AnalysisWorkflow:
                 )
                 reports.append(outcome.report)
                 verdicts.append(outcome.verdict)
-                if outcome.passed and not errors:
+                blocking_degraded = self.store.load_manifest(run_id)[
+                    "degraded_reasons"
+                ]
+                if outcome.passed and not errors and not blocking_degraded:
                     proposal["execution_eligible"] = True
                     proposal["eligibility_reasons"] = ["ALL_VALIDATION_GATES_PASSED"]
                 else:
                     reason_codes = list(outcome.report["reason_codes"])
                     proposal["eligibility_reasons"] = sorted(
-                        set(errors + reason_codes + ["RESEARCH_ONLY"])
+                        set(
+                            errors
+                            + reason_codes
+                            + blocking_degraded
+                            + ["RESEARCH_ONLY"]
+                        )
                     )
                     if outcome.report["verdict"] == "unavailable":
                         self.store.add_degraded_reason(
@@ -397,11 +466,32 @@ class AnalysisWorkflow:
 
     def _result(self, run_id: str) -> Dict[str, Any]:
         manifest = self.store.load_manifest(run_id)
+        if manifest["state"] == "committed":
+            CompletionEmailOutbox(self.root, self.registry).activate_for_committed_run(
+                run_id
+            )
+        artifact_dir = self.root / "artifacts" / run_id
         return {
             "run_id": run_id,
             "manifest": manifest,
             "run_directory": str(self.store.run_dir(run_id)),
-            "digest": str(self.root / "artifacts" / run_id / "digest.md"),
+            "digest": str(artifact_dir / "digest.md"),
+            "trending_analysis_email": str(
+                artifact_dir / Path(BatchEmailGenerator.ANALYSIS_BODY).name
+            ),
+            "system_logs_email": str(
+                artifact_dir / Path(BatchEmailGenerator.LOGS_BODY).name
+            ),
+            "system_log": str(
+                artifact_dir / Path(BatchEmailGenerator.SYSTEM_LOG).name
+            ),
+            "commit_receipt": str(
+                self.root / "state" / "commits" / ("%s.json" % run_id)
+            ),
+            "screen_coverage": str(
+                self.store.run_dir(run_id) / "screen" / "coverage.json"
+            ),
+            "notifications": load_batch_email_requests(self.root, run_id),
         }
 
     @staticmethod
@@ -412,3 +502,11 @@ class AnalysisWorkflow:
             raise ContractError("input missing fields: %s" % ", ".join(missing))
         if not isinstance(document["observations"], list):
             raise ContractError("observations must be an array")
+        batch_id = document.get("batch_id")
+        if batch_id is not None and (
+            not isinstance(batch_id, str)
+            or re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", batch_id) is None
+        ):
+            raise ContractError(
+                "batch_id must use 1-128 letters, digits, dot, underscore, colon, or hyphen"
+            )

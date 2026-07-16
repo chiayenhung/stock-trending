@@ -2,8 +2,8 @@
 
 The implementation is in stocktrend/providers.py and stocktrend/validation.py.
 
-- OpenAI producer -> Anthropic validator
-- Anthropic producer -> OpenAI validator
+- Codex subscription producer -> Anthropic API validator
+- Claude subscription producer -> OpenAI API validator
 - Validator failure -> research-only
 - Same vendor -> configuration failure and research-only
 

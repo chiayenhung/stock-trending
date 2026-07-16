@@ -159,15 +159,22 @@ They are separate workflows connected only by versioned structured contracts.
 [8. Artifact QA] numeric provenance, HTML safety, recipient policy
     |
     v
+[9A. Generate trending-analysis email] batch-scoped result package
+    |
+    v
+[9B. Generate system-logs email] sanitized operational package
+    |
+    v
 [Finalize immutable manifest]
     |
-    +--> [Research publisher outbox]
+[Final committer] idempotently publish approved artifacts
     |
-    +--> [Validated proposals store]
+    +--> [Two email delivery outbox items]
 ~~~
 
-No delivery, Git commit, approval request, or broker action occurs before the
-run is finalized and its relevant QA gates pass.
+Email bodies and requests are generated before the committer, but connector
+delivery, Git commit, approval request, or broker action cannot occur until the
+run is finalized, the committer succeeds, and the relevant QA gates pass.
 
 ### 3.2 Execution workflow
 
@@ -234,6 +241,13 @@ validated by a configured OpenAI model. Cross-vendor validation is invoked
 through a dedicated provider adapter or validation service rather than assumed
 to be native to the producer platform.
 
+The reference host routing uses the current platform subscription only for the
+producer: Codex invokes its saved ChatGPT subscription through `codex exec` and
+uses an Anthropic API model as validator; Claude invokes its saved subscription
+through `claude --print` and uses an OpenAI API model as validator. Producer
+subprocesses remove same-vendor API-key variables and verify subscription auth
+before generation so they cannot silently switch billing modes.
+
 ### 4.2 Deterministic components
 
 | Component | Responsibility | Output |
@@ -248,8 +262,8 @@ to be native to the producer platform.
 | screener | Deterministic candidate selection | candidates |
 | validator_runner | Invoke code and semantic validators | validation_report |
 | digest_renderer | Template-based Markdown generation | digest.md |
-| email_renderer | Template-based safe HTML/text generation | email artifacts |
-| publisher | Idempotent Git/email/Slack operations through an outbox | delivery_events |
+| email_generator | Generate separate trending-analysis and sanitized-system-log emails for one batch | email artifacts, two email requests |
+| committer | Final idempotent publication of approved artifacts after email generation | commit_receipt, delivery_events |
 | risk_engine | Eligibility, exposure, sizing, and circuit breakers | risk_decision |
 | approval_service | Durable approval state and expiry | approval_record |
 | order_manager | Submit, cancel/replace, reconcile, and track orders | order_events |
@@ -258,6 +272,58 @@ to be native to the producer platform.
 
 Template interpolation, joins, calculations, commits, and delivery formatting
 do not use an LLM.
+
+### 4.3 Industry-diversified sourcing universe and coverage gate
+
+Production analysis must not infer its stock universe from a demo fixture or
+from whichever symbols happen to be present in an input file. A deterministic,
+versioned universe registry runs before quote ingestion and assigns every
+instrument to one primary coverage bucket. The initial US-listed universe must
+cover all four buckets below; the symbols are bootstrap examples, not an
+instruction to trade and not a permanent hard-coded list.
+
+| Required bucket | Scope | Bootstrap examples |
+|---|---|---|
+| semiconductor | designers, foundries, analog/connectivity, and equipment | NVDA, AMD, AVGO, QCOM, TSM, ASML, AMAT, LRCX |
+| memory_storage | memory, storage, and memory-interface suppliers | MU, WDC, STX, MRVL, SIMO |
+| power_infrastructure | data-center power, electrical equipment, grid construction, and generation | VRT, ETN, PWR, GEV, CEG |
+| software | cloud platforms, enterprise software, data, observability, and security | MSFT, ORCL, NOW, PLTR, CRWD, SNOW, DDOG |
+
+Each registry entry includes instrument ID, ticker, venue, asset type, bucket,
+classification source, effective interval, and active/delisted status. Registry
+changes are reviewed and versioned; symbol changes and delistings never mutate
+historical snapshots. The initial list is reviewed at least quarterly, while
+corporate-action status is checked for every run.
+
+Before screening, the sourcer writes an immutable coverage report containing,
+per bucket, the configured, attempted, valid, stale, missing, and rejected
+instrument counts. A production analysis requires fresh quote and bar-metric
+facts for at least four instruments in every required bucket and at least 20
+instruments overall. A coverage shortfall adds
+`SOURCE_COVERAGE_INCOMPLETE`, makes every proposal research-only, and is shown
+prominently in the digest. Missing buckets are never silently omitted.
+
+Screening remains threshold-based: a bucket may legitimately produce zero
+candidates when none of its stocks pass the price, liquidity, volume-ratio, and
+momentum rules. The digest still renders every bucket with attempted, valid,
+and passing counts plus an explicit `no passing candidates` result. To prevent
+one industry from crowding out the rest, the deterministic screener ranks
+passing stocks within each bucket, retains at most three per bucket, and caps
+the combined candidate set at 12. Ranking inputs and tie-breakers are declared
+in strategy policy and do not use an LLM.
+
+The production path is separate from the offline demo:
+
+1. `stocktrend source` builds a point-in-time universe snapshot and coverage
+   report using approved read-only adapters.
+2. `stocktrend run` consumes that snapshot only when its configuration,
+   universe version, hashes, and freshness checks match the run manifest.
+3. Fixture provenance is accepted only in test/demo profiles. A Codex- or
+   Claude-hosted production-profile run rejects fixture provenance instead of
+   producing a report that resembles live sourcing.
+4. The scheduler records a sourcer heartbeat, last successful snapshot, source
+   latency, and per-bucket coverage. Missing or stale heartbeats raise a
+   dead-man alert and block the production analysis from starting.
 
 ## 5. Contracts and schema rules
 
@@ -435,6 +501,15 @@ Stage output existence alone never implies completion.
 Each delivery, approval request, Git commit, and broker operation has a durable
 operation ID and outbox record. Retry checks recorded acknowledgement before
 attempting the side effect again.
+
+Each batch renders two deterministic emails before the final committer: one for
+trending analysis results and one for sanitized system logs. Each request
+includes batch ID, email kind, recipient, subject, body path, attachment paths,
+and status. The committer is the terminal workflow stage. Only after it succeeds
+may a platform mail connector perform delivery and record acknowledgement.
+Credentials, raw provider prompts, and raw provider responses are excluded from
+the system-log package. Requests remain blocked until the run reaches the
+terminal committed state, then become pending for the connector.
 
 ## 7. Validation and degraded-mode policy
 
@@ -805,10 +880,28 @@ For Codex:
   or checked for consistency in CI;
 - output produced by an OpenAI model is sent to the configured Claude validator
   through the independent validation adapter;
+- local production uses `codex exec` with verified ChatGPT subscription auth,
+  while the validator alone receives `ANTHROPIC_API_KEY`;
 - if the Claude validator is unavailable, the run may publish research with a
-  warning but cannot mark any proposal execution-eligible.
+  warning but cannot mark any proposal execution-eligible;
+- after the final committer succeeds, the host mail connector sends the
+  trending-analysis and system-log emails, then acknowledges both outbox items.
 
-### 11.4 Tier capability mapping
+### 11.4 Claude adapter
+
+For Claude:
+
+- local production uses `claude --print` with verified non-API subscription
+  auth, tools disabled, and no session persistence;
+- the producer subprocess removes `ANTHROPIC_API_KEY`, while the independent
+  validator alone receives `OPENAI_API_KEY`;
+- output is sent to the OpenAI Responses API validator;
+- validator failure retains research artifacts but makes all proposals
+  non-executable;
+- after the final committer succeeds, the host mail connector sends the
+  trending-analysis and system-log emails, then acknowledges both outbox items.
+
+### 11.5 Tier capability mapping
 
 tiers.yaml maps capabilities, not only names:
 
@@ -888,9 +981,11 @@ It does not require byte-identical model prose.
   fixtures belong in Git.
 - Operational run state, raw licensed data, credentials, locks, and order/account
   snapshots do not belong in Git.
-- A finalized, redacted run manifest and publishable digest may be committed
-  through the publisher outbox if repository publication is enabled.
-- Git commits occur only after artifact QA.
+- A finalized, redacted run manifest, publishable digest, and two email packages
+  may be committed through the publisher outbox if repository publication is
+  enabled.
+- The deterministic artifact committer is last. Optional Git commits occur only
+  after artifact QA, both email packages are generated, and the run is finalized.
 - Large Parquet datasets use an approved local/object store with retention and
   backup policy.
 - Run artifacts are immutable; corrections create a revision with lineage.
@@ -1054,8 +1149,22 @@ Exit gate: contract, validation, degraded-mode, and side-effect semantics confor
 
 ### P1 — analysis-only release
 
-- [ ] Implement read-only source adapters.
-- [ ] Implement deterministic screener.
+- [x] Implement the provider-neutral, read-only HTTPS source adapter boundary;
+      concrete endpoint approval and enablement remain a deployment decision.
+- [x] Implement the versioned industry-universe registry with semiconductor,
+      memory/storage, power-infrastructure, and software buckets.
+- [x] Implement `stocktrend source`, its immutable source-snapshot contract,
+      and the per-bucket coverage report.
+- [x] Enforce at least four fresh instruments per required bucket and 20 total;
+      route incomplete coverage to `SOURCE_COVERAGE_INCOMPLETE` research-only.
+- [x] Reject fixture provenance in production profiles and require explicit
+      demo/test mode for repository fixtures.
+- [x] Add deterministic within-bucket ranking, a three-candidate bucket cap,
+      a 12-candidate total cap, and explicit zero-passing bucket rendering.
+- [x] Add sourcer heartbeat and a stale-snapshot dead-man status command.
+- [ ] Connect `live-analysis` to an approved calendar-aware scheduler and alert
+      on nonzero `source-status --require-analysis-ready` results.
+- [x] Implement deterministic screener.
 - [ ] Implement model agents and tier capability checks.
 - [ ] Implement complete cross-vendor semantic validation for potentially
       actionable output.
@@ -1107,6 +1216,7 @@ These decisions remain open but now have explicit blocking stages:
 |---|---|
 | Reference platform and first venue | Phase 1 |
 | Quote, corporate-action, news, and industry providers | Phase 1 |
+| Universe classification source, review owner, and quarterly refresh process | Phase 1 |
 | X official access, budget, quota, and retention | Social source activation |
 | Concrete per-platform model and reasoning mappings | Phase 2 |
 | Concrete Claude and OpenAI validator models, credentials, budget, and data residency | Phase 2 |
@@ -1123,6 +1233,8 @@ These decisions remain open but now have explicit blocking stages:
 - Replaced trade_date-only idempotency with versioned logical run identity,
   immutable attempts, locks, hashes, and atomic checkpoints.
 - Made degraded runs structurally ineligible for execution.
+- Added an industry-diversified sourcing universe, pre-screen coverage gate,
+  fixture/production separation, and sourcer heartbeat requirement.
 - Moved signal vocabulary, strategy policy, approvals, exits, and complete order
   lifecycle into P0/P2 prerequisites rather than post-executor enhancements.
 - Required semantic validation of every potentially actionable proposal;

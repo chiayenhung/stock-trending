@@ -18,3 +18,20 @@ sources:
     content_is_untrusted: true
     official_api_required: true
     allowlist: []
+production:
+  approved_adapter: http_json_gateway
+  snapshot_max_age_seconds: 900
+  heartbeat_max_age_seconds: 900
+  quote_max_age_seconds: 900
+  bar_metrics_max_age_seconds: 172800
+adapters:
+  http_json_gateway:
+    enabled: false
+    credential_scope: read_only
+    endpoint_env: STOCKTREND_MARKET_DATA_URL
+    allowed_host_env: STOCKTREND_MARKET_DATA_HOST
+    token_env: STOCKTREND_MARKET_DATA_TOKEN
+    token_required: true
+    timeout_seconds: 30
+    license_class: configured_market_data
+    redirects_allowed: false

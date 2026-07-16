@@ -10,6 +10,10 @@ Status: {{status}}
 
 {{market_context}}
 
+## Source coverage
+
+{{source_coverage}}
+
 ## Candidates
 
 {{candidate_sections}}

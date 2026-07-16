@@ -80,8 +80,10 @@ class RunStore:
         "screened": {"analyzed", "failed"},
         "analyzed": {"validated", "failed"},
         "validated": {"rendered", "failed"},
-        "rendered": {"finalized", "failed"},
-        "finalized": set(),
+        "rendered": {"emails_generated", "failed"},
+        "emails_generated": {"finalized", "failed"},
+        "finalized": {"committed", "failed"},
+        "committed": set(),
         "failed": set(),
     }
 

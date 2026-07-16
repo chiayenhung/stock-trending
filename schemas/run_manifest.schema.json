@@ -31,7 +31,9 @@
         "analyzed",
         "validated",
         "rendered",
+        "emails_generated",
         "finalized",
+        "committed",
         "failed"
       ]
     },

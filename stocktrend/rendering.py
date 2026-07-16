@@ -16,6 +16,7 @@ def render_digest(
     proposals: Iterable[Dict[str, Any]],
     validation_reports: Iterable[Dict[str, Any]],
     degraded_reasons: List[str],
+    coverage: Dict[str, Any],
 ) -> str:
     template = template_path.read_text(encoding="utf-8")
     proposal_sections = []
@@ -58,6 +59,7 @@ def render_digest(
         "{{status}}": "degraded" if degraded_reasons else "finalized",
         "{{degraded_banner}}": degraded_banner,
         "{{market_context}}": context["summary"],
+        "{{source_coverage}}": _coverage_markdown(coverage),
         "{{candidate_sections}}": "\n\n".join(proposal_sections)
         or "No screened candidates.",
         "{{validation_summary}}": validation_summary,
@@ -88,3 +90,28 @@ def artifact_qa(
 
 def _money(value: Any) -> str:
     return "n/a" if value is None else "$%.2f" % float(value)
+
+
+def _coverage_markdown(coverage: Dict[str, Any]) -> str:
+    if coverage.get("profile") != "production":
+        return "Coverage gate not enforced for this demo/test input."
+    lines = [
+        "| Industry bucket | Configured | Attempted | Valid | Passed screen |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for bucket, counts in sorted(coverage["buckets"].items()):
+        passing = int(counts["passing_screen"])
+        bucket_label = bucket.replace("_", " ")
+        if passing == 0:
+            bucket_label += " — no passing candidates"
+        lines.append(
+            "| %s | %d | %d | %d | %d |"
+            % (
+                bucket_label,
+                counts["configured"],
+                counts["attempted"],
+                counts["valid"],
+                passing,
+            )
+        )
+    return "\n".join(lines)
