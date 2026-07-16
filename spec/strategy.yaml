@@ -1,7 +1,7 @@
 schema_version: 1.0.0
-strategy_id: us_momentum_swing_v1
-strategy_version: 1.1.0
-status: analysis_only
+strategy_id: us_momentum_research_v1
+strategy_version: 2.0.0
+status: research_only
 venues:
   - XNAS
   - XNYS
@@ -15,18 +15,11 @@ assets:
     - short
     - otc
     - leveraged
-signal_types:
+assessments:
   - no_action
   - watch
-  - enter_long
-  - add_long
-  - reduce
-  - exit
-actionable_signal_types:
-  - enter_long
-  - add_long
-  - reduce
-  - exit
+  - positive_trend
+  - negative_trend
 screen:
   minimum_price_usd: 5.0
   minimum_average_volume: 500000
@@ -35,19 +28,16 @@ screen:
 candidate_selection:
   maximum_per_bucket: 3
   maximum_total: 12
-holding_horizon_sessions:
+research_horizon_sessions:
   minimum: 1
   maximum: 5
 required_fact_types:
-  enter_long:
+  positive_trend:
     - quote
     - bar_metrics
-  add_long:
+  negative_trend:
     - quote
     - bar_metrics
-  reduce:
+  watch:
     - quote
-    - position
-  exit:
-    - quote
-    - position
+    - bar_metrics

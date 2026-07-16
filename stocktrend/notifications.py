@@ -28,16 +28,17 @@ def configured_recipient(workflow_config: Dict[str, Any]) -> str:
     ).strip()
 
 
-def _proposal_summary(proposals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _research_signal_summary(signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [
         {
-            "signal_id": item["signal_id"],
+            "research_signal_id": item["research_signal_id"],
             "symbol": item["symbol"],
-            "signal_type": item["signal_type"],
-            "execution_eligible": item["execution_eligible"],
-            "eligibility_reasons": item["eligibility_reasons"],
+            "assessment": item["assessment"],
+            "research_only": item["research_only"],
+            "validation_status": item["validation_status"],
+            "validation_reason_codes": item["validation_reason_codes"],
         }
-        for item in proposals
+        for item in signals
     ]
 
 
@@ -169,16 +170,18 @@ class BatchEmailGenerator:
         manifest = self.store.load_manifest(run_id)
         digest_path = run_dir / "rendered" / "digest.md"
         digest = digest_path.read_text(encoding="utf-8")
-        proposals = load_json(
-            run_dir / "validation" / "signal_proposals.json"
-        )["signal_proposals"]
+        signals = load_json(
+            run_dir / "validation" / "research_signals.json"
+        )["research_signals"]
         reports = load_json(run_dir / "validation" / "reports.json")["reports"]
         trace = load_json(run_dir / "trace" / "events.json")
         source_input = load_json(run_dir / "inputs" / "observations.json").get(
             "source_snapshot"
         )
         screen_coverage = load_json(run_dir / "screen" / "coverage.json")
-        eligible_count = sum(bool(item["execution_eligible"]) for item in proposals)
+        validated_count = sum(
+            item["validation_status"] == "pass" for item in signals
+        )
         producer = manifest["versions"]
 
         analysis_body = "\n".join(
@@ -187,8 +190,8 @@ class BatchEmailGenerator:
                 "",
                 "- Batch: `%s`" % batch_id,
                 "- Run: `%s`" % run_id,
-                "- Passing validation gates: `%d/%d`"
-                % (eligible_count, len(proposals)),
+                "- Research signals passing validation: `%d/%d`"
+                % (validated_count, len(signals)),
                 "",
                 digest,
             ]
@@ -224,7 +227,7 @@ class BatchEmailGenerator:
             "snapshot_stage": "pre_committer",
             "snapshot_at": manifest["updated_at"],
             "manifest": manifest,
-            "proposal_summary": _proposal_summary(proposals),
+            "research_signal_summary": _research_signal_summary(signals),
             "validation_reports": reports,
             "source_snapshot": source_input,
             "screen_coverage": screen_coverage,

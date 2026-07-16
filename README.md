@@ -1,21 +1,23 @@
-# Stock Trend Workflow
+# Stock Trend Research Workflow
 
-This repository is the analysis-first reference implementation of
-[stock-trend-workflow-plan-v2_2.md](stock-trend-workflow-plan-v2_2.md).
+This repository is the analysis-only reference implementation of
+[stock-trend-research-workflow-plan-v3_0.md](stock-trend-research-workflow-plan-v3_0.md).
 
 It provides:
 
-- versioned JSON contracts and policy files;
-- atomic run manifests, locks, hashes, and state transitions;
-- point-in-time fact normalization and deterministic screening;
-- OpenAI and Anthropic API structured-output validator adapters;
-- Codex and Claude subscription-backed producer adapters;
-- mandatory cross-vendor semantic validation;
-- deterministic rendering and a durable publication outbox;
-- paper-only risk, approval, order-state, and evaluation primitives;
-- an offline demo and failure-oriented tests.
+- a versioned, industry-diversified research universe;
+- point-in-time market, filing, industry, and bounded social facts;
+- deterministic source coverage and momentum screening;
+- isolated market-context and per-symbol model tasks;
+- research-only trend signals linked to evidence claims;
+- independent cross-vendor semantic validation;
+- atomic manifests, checkpoints, hashes, and state transitions;
+- deterministic digests, sanitized logs, and durable email requests;
+- point-in-time evaluation of research assessments.
 
-Live trading is intentionally unavailable.
+The codebase has no transaction, account, position-sizing, or market-action
+module or contract. `research_signal` is structurally research-only and contains
+no entry, exit, quantity, or eligibility fields.
 
 ## Setup
 
@@ -30,15 +32,15 @@ python3 -m venv .venv
 .venv/bin/stocktrend demo
 ~~~
 
-The demo uses an OpenAI-labeled scripted producer and an
-Anthropic-labeled scripted validator. It performs no network calls and creates
-operational files under state/ and publishable output under artifacts/. It also
-creates two batch-scoped email packages: trending analysis results and sanitized
-system logs. The final committer publishes their artifacts after finalization.
+The demo uses an OpenAI-labeled scripted producer and an Anthropic-labeled
+scripted validator. It performs no network calls. Operational files are written
+under `state/`, while finalized publishable output is written under `artifacts/`.
+Each run generates two email packages: the research digest and sanitized system
+logs.
 
 ## Run from Codex
 
-Sign the Codex CLI in with the ChatGPT/Codex subscription and set only the
+Sign the Codex CLI in with the ChatGPT/Codex subscription and configure only the
 opposite-vendor validator key:
 
 ~~~bash
@@ -50,21 +52,17 @@ export ANTHROPIC_API_KEY=...
   --input-profile test
 ~~~
 
-This command is a provider-integration smoke test, not a live market-sourcing
-run. The fixture contains only AAPL and NVDA; the current momentum and volume
-screen is expected to retain only NVDA. No sourcer or quote adapter is started
-by `stocktrend run`. Test-profile input is always degraded with
-`NON_PRODUCTION_INPUT` and cannot become execution-eligible.
+The producer runs through `codex exec` with saved ChatGPT authentication.
+OpenAI API-key variables are removed from the producer subprocess. Anthropic is
+used only for the independent validator.
 
-The producer runs through `codex exec` using saved ChatGPT authentication. The
-subprocess environment removes OpenAI API-key variables so it cannot silently
-switch to usage-based OpenAI API billing. Anthropic API is used only for the
-independent validator.
+The fixture contains AAPL and NVDA; the configured screen is expected to retain
+only NVDA. Test-profile input is always marked `NON_PRODUCTION_INPUT`.
 
 ## Run from Claude
 
-Sign Claude Code in with the Claude subscription and set only the OpenAI
-validator key:
+Sign Claude Code in with subscription authentication and configure only the
+OpenAI validator key:
 
 ~~~bash
 claude auth login
@@ -75,61 +73,29 @@ export OPENAI_API_KEY=...
   --input-profile test
 ~~~
 
-Claude is the subscription-backed producer and OpenAI API is the independent
-validator. `--host auto` is the default and recognizes Codex or Claude runtime
-environment markers; pass the host explicitly in ordinary terminals.
+Claude is the subscription-backed producer and the OpenAI Responses API is the
+independent validator. Producer subprocesses have tools disabled and remove API
+credentials belonging to the producer vendor.
 
-API validator models are configured with `STOCKTREND_OPENAI_MODEL` and
+Validator models are configured with `STOCKTREND_OPENAI_MODEL` and
 `STOCKTREND_ANTHROPIC_MODEL`. Optional subscription producer overrides use
-`STOCKTREND_CODEX_MODEL` and `STOCKTREND_CLAUDE_CODE_MODEL`. If the independent
-validator is unavailable, the research artifact is retained with a warning and
-all proposals remain non-executable.
+`STOCKTREND_CODEX_MODEL` and `STOCKTREND_CLAUDE_CODE_MODEL`. Validator failure,
+timeout, malformed output, or same-vendor routing leaves the affected signal
+research-only with unavailable or indeterminate validation.
 
-## Live market-data analysis
+## Current market-data research
 
-Live market-data analysis is implemented separately from trading. It uses the
-versioned four-bucket universe in `spec/universe.yaml`. The approved adapter is
-Tiingo's data-only HTTPS API at `https://api.tiingo.com`; it uses the official
-consolidated equity snapshot and adjusted end-of-day history endpoints. The
-adapter derives the 20-session average volume, current volume ratio, and
-20-session momentum deterministically. Live order submission remains
-unavailable.
+The production research path uses the versioned four-bucket universe in
+`spec/universe.yaml`. The approved market-data adapter is Tiingo's data-only
+HTTPS API. It reads the consolidated equity snapshot and adjusted end-of-day
+history endpoints and derives the 20-session average volume, current volume
+ratio, and 20-session momentum deterministically.
 
-Create a Tiingo account, review its internal-use license, and obtain the API
-token from `https://api.tiingo.com/account/api/token`. Put the token only in
-`STOCKTREND_TIINGO_API_TOKEN` in `.env`; the adapter sends it in the
-`Authorization` header and never in a URL. The free plan permits 50 requests per
-hour, exactly enough for one 25-symbol sourcing pass (one snapshot and one
-history request per symbol), so other API activity can cause a fail-closed rate
-limit error.
+Create a Tiingo account, review its internal-use license, and place the token in
+`STOCKTREND_TIINGO_API_TOKEN` in `.env`. The adapter sends the token in the
+`Authorization` header and never in a URL.
 
-The generic normalized HTTPS gateway remains available as a disabled fallback.
-If it is reviewed and selected as `production.approved_adapter`, it receives
-`GET` requests with `symbol` and `session_date` query parameters, a bearer token
-in the `Authorization` header, and must return:
-
-~~~json
-{
-  "schema_version": "1.0.0",
-  "symbol": "NVDA",
-  "quote": {
-    "record_id": "provider-quote-id",
-    "observed_at": "2026-07-15T19:59:30Z",
-    "price": 100.0,
-    "bid": 99.99,
-    "ask": 100.01
-  },
-  "bar_metrics": {
-    "record_id": "provider-metrics-id",
-    "observed_at": "2026-07-15T19:59:00Z",
-    "average_volume_20d": 1000000,
-    "volume_ratio": 1.5,
-    "momentum_20d_pct": 5.0
-  }
-}
-~~~
-
-After configuring the Tiingo token, build and check a snapshot:
+Build and check a source snapshot:
 
 ~~~bash
 .venv/bin/stocktrend source --session-date YYYY-MM-DD
@@ -137,69 +103,10 @@ After configuring the Tiingo token, build and check a snapshot:
 .venv/bin/stocktrend source-status --require-full-coverage
 ~~~
 
-When enabled in `spec/sources.yaml`, production sourcing also reads two public
-HTML sources without API credentials:
-
-- company-specific SEC EDGAR filing listings become `news` facts;
-- EIA Today in Energy articles relevant to electricity and generation become
-  `industry_datapoint` facts for the power-infrastructure bucket.
-
-The public enrichers reject redirects, allowlist their hosts, retain only
-normalized structured facts and source URLs, and treat all external content as
-untrusted data. Extraction is deterministic and makes no model call; the
-configured LLM fallback is intentionally disabled. An unavailable optional
-enrichment adds a degraded reason to analysis instead of being silently
-omitted.
-
-Social sourcing uses a host-browser capture of the public X account
-`@aleabitoreddit`. Before live sourcing, the Codex host captures posts visible
-in X's Latest search for the exact five-day window and stores only the bounded,
-normalized post snapshot under ignored `state/social/`. The CLI never receives
-browser credentials or session data. The adapter rejects stale snapshots,
-wrong accounts, non-X URLs, out-of-window posts, malformed post IDs, and text
-without an exact universe cashtag. Every accepted post is uncorroborated, and
-social-only evidence cannot support an actionable proposal.
-
-The browser host writes this contract to
-`state/social/x_aleabitoreddit.json`:
-
-~~~json
-{
-  "schema_version": "1.0.0",
-  "capture_method": "browser",
-  "account": "aleabitoreddit",
-  "profile_url": "https://x.com/aleabitoreddit",
-  "captured_at": "2026-07-16T06:30:00Z",
-  "window_start": "2026-07-11T06:30:00Z",
-  "window_end": "2026-07-16T06:30:00Z",
-  "posts": [
-    {
-      "post_id": "1234567890",
-      "url": "https://x.com/aleabitoreddit/status/1234567890",
-      "posted_at": "2026-07-15T18:00:00Z",
-      "text": "$NVDA example text"
-    }
-  ]
-}
-~~~
-
-Validate a capture before sourcing with:
+Source and analyze current data in one command:
 
 ~~~bash
-.venv/bin/stocktrend validate \
-  --schema social_browser_snapshot \
-  state/social/x_aleabitoreddit.json
-~~~
-
-SEC requires automated tools to declare their identity and contact address.
-Set `STOCKTREND_SEC_USER_AGENT` to an application name plus a monitored contact
-email before live sourcing. This value is sent only as the SEC request
-`User-Agent`; it is never passed to a model or written into source snapshots.
-
-Or source and analyze in one command:
-
-~~~bash
-.venv/bin/stocktrend live-analysis \
+.venv/bin/stocktrend analyze-live-data \
   --session-date YYYY-MM-DD \
   --host codex \
   --revision 1
@@ -207,61 +114,108 @@ Or source and analyze in one command:
 
 The source command writes an immutable snapshot under
 `state/source_snapshots/` and a heartbeat under `state/sourcing/`. Missing or
-stale heartbeats block analysis. Incomplete industry coverage is allowed only
-as research and adds `SOURCE_COVERAGE_INCOMPLETE` to every proposal. A
-calendar-aware scheduler may invoke `live-analysis`; its dead-man monitor should
-invoke `source-status --require-analysis-ready`, while the coverage monitor
-should invoke `source-status --require-full-coverage`. Both alert on a nonzero
-exit status.
+stale heartbeats block production research. Incomplete industry coverage is
+allowed only with `SOURCE_COVERAGE_INCOMPLETE` recorded on the run.
+
+The generic normalized HTTPS gateway remains disabled unless it is explicitly
+reviewed and selected as `production.approved_adapter`.
+
+## Public-source enrichment
+
+When enabled, production sourcing adds normalized facts from:
+
+- SEC EDGAR filing listings for company-specific filing events;
+- EIA Today in Energy for relevant power-infrastructure context;
+- an authenticated-browser snapshot of `@aleabitoreddit` posts visible in X's
+  Latest search for the rolling prior five days.
+
+Public enrichers reject redirects, allowlist hosts, store normalized facts
+rather than page HTML, and treat all external content as untrusted data. Their
+configured LLM fallback remains disabled.
+
+Before current-data sourcing, the Codex host stores the normalized X snapshot at
+`state/social/x_aleabitoreddit.json`. Cookies, tokens, screenshots, page HTML,
+and browser session data must never be stored. If authentication is required,
+ask the user to sign in rather than switching sources or bypassing access.
+
+Validate a browser snapshot with:
+
+~~~bash
+.venv/bin/stocktrend validate \
+  --schema social_browser_snapshot \
+  state/social/x_aleabitoreddit.json
+~~~
+
+SEC requires an identifying user agent. Set `STOCKTREND_SEC_USER_AGENT` to an
+application name and monitored contact email. It is sent only to SEC and is not
+persisted in source snapshots or model packets.
+
+## Research signals and validation
+
+Every `research_signal` includes:
+
+- a positive, negative, watch, or no-action assessment;
+- an intended research horizon;
+- a thesis and monitoring triggers;
+- evidence claim IDs and known gaps;
+- producer lineage;
+- `research_only: true`;
+- an independent validation status and reason codes.
+
+Deterministic checks enforce strategy version, assessment vocabulary, horizon,
+claim existence, fact lineage, and same-instrument evidence. The semantic
+validator receives only the signal, selected claims, and a minimized evidence
+packet. Its vendor must differ from the producer vendor.
+
+Validate a stored signal with:
+
+~~~bash
+.venv/bin/stocktrend validate \
+  --schema research_signal \
+  path/to/research_signal.json
+~~~
 
 ## Completion email and logs
 
-Before the final committer, every batch generates two independent emails:
+Before the final committer, every batch generates:
 
-1. `trending_analysis.md`, with the validated trend results and digest.
+1. `trending_analysis.md`, containing the validated research digest.
 2. `system_logs.md`, with an attached sanitized `system_log.json`.
 
-Each has its own durable request under `state/outbox/`, tagged with `batch_id`
-and `email_kind`. Set `batch_id` in the input document to select a business
-batch identifier; otherwise the run ID is used. The committer remains the last
-workflow stage and publishes the digest and both email packages under
-`artifacts/<run_id>/` before connector delivery is allowed. The default
-recipient is `hodalalala@gmail.com`; override it with
-`STOCKTREND_SUMMARY_EMAIL` or `--email-to`. Requests are created as `blocked`
-and become `pending` only after the run reaches the terminal `committed` state.
-The host agent then delivers both requests through its authenticated mail
-connector and acknowledges each with:
+Each request is durable, batch-scoped, and blocked until the run reaches
+`committed`. The host then sends it through an authenticated mail connector and
+acknowledges confirmed delivery:
 
 ~~~bash
 .venv/bin/stocktrend email-ack \
-  --operation-id email_<run_id>_<email_kind>_<hash> \
+  --operation-id <operation-id> \
   --provider-message-id <connector-message-id>
 ~~~
 
-No SMTP or Gmail credential is stored in this repository. Until a host
-connector confirms delivery, each email request remains pending.
-
-## Important boundaries
-
-- Subscription production is isolated from usage-based validator API access.
-- Codex must report ChatGPT login; Claude must report non-API subscription auth.
-- Provider requests contain only the minimized task packet assembled by the
-  workflow.
-- Any source whose license forbids processing by the validator vendor cannot
-  support an executable proposal.
-- The paper engine uses the same explicit order transitions intended for future
-  live adapters, but no live broker class is included.
+Credentials, raw provider prompts, and raw provider responses are excluded from
+completion packages.
 
 ## Repository map
 
 ~~~text
-spec/                  Workflow, strategy, risk, approval, evaluation, sources
-schemas/               JSON Schema contracts
-prompts/               Versioned model task instructions
-stocktrend/            Deterministic core and provider adapters
-adapters/              Platform integration notes
-CLAUDE.md               Durable Claude host routing and delivery instructions
-tests/                  Contract, workflow, and failure tests
-state/                  Runtime state, ignored by Git
-artifacts/              Finalized publishable output, ignored by Git
+spec/          Workflow, strategy, evaluation, source, tier, and universe policy
+schemas/       Versioned JSON Schema research contracts
+prompts/       Bounded model task instructions
+stocktrend/    Deterministic research engine and provider adapters
+adapters/      Host and validation integration notes
+tests/         Contract, workflow, sourcing, security, and failure tests
+state/         Ignored operational state
+artifacts/     Ignored finalized research output
 ~~~
+
+## Verification
+
+~~~bash
+.venv/bin/python -m pytest
+.venv/bin/stocktrend demo
+git diff --check
+~~~
+
+The offline demo proves only the scripted workflow. A real provider integration
+was exercised only when valid credentials produced a successful network
+response.

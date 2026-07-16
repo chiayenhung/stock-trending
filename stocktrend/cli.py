@@ -12,8 +12,7 @@ from typing import Any, Dict, Optional
 from .config import ConfigBundle
 from .contracts import SchemaRegistry
 from .demo import create_demo_clients
-from .errors import ConfigurationError, SafetyViolation, StateTransitionError
-from .execution import ApprovalService, PaperBroker, RiskEngine
+from .errors import ConfigurationError, StateTransitionError
 from .notifications import (
     CompletionEmailOutbox,
     configured_recipient,
@@ -25,7 +24,7 @@ from .sourcing import (
     source_status,
     validate_run_input,
 )
-from .util import atomic_write_json, load_json
+from .util import load_json
 from .workflow import AnalysisWorkflow
 
 
@@ -70,7 +69,6 @@ def command_demo(args: argparse.Namespace) -> int:
     if args.revision is not None:
         result = workflow.run(
             document,
-            execution_mode=args.mode,
             run_revision=args.revision,
         )
     else:
@@ -78,7 +76,6 @@ def command_demo(args: argparse.Namespace) -> int:
             try:
                 result = workflow.run(
                     document,
-                    execution_mode=args.mode,
                     run_revision=revision,
                 )
                 break
@@ -99,7 +96,6 @@ def command_run(args: argparse.Namespace) -> int:
         args,
         document,
         args.input_profile,
-        args.mode,
     )
     print(json.dumps(result, indent=2))
     return 0
@@ -128,10 +124,7 @@ def _execute_model_workflow(
     args: argparse.Namespace,
     document: Dict[str, Any],
     input_profile: str,
-    execution_mode: str,
 ) -> Dict[str, Any]:
-    if input_profile == "test" and execution_mode != "analysis_only":
-        raise SafetyViolation("test input cannot be used for paper execution")
     degraded_reasons = validate_run_input(root, document, input_profile)
     producer, validator = _provider_pair(args)
     workflow = AnalysisWorkflow(
@@ -143,7 +136,6 @@ def _execute_model_workflow(
     )
     return workflow.run(
         document,
-        execution_mode=execution_mode,
         run_revision=args.revision,
     )
 
@@ -181,12 +173,12 @@ def command_source_status(args: argparse.Namespace) -> int:
     failed = (
         args.require_analysis_ready and not result["analysis_allowed"]
     ) or (
-        args.require_full_coverage and not result["execution_source_ready"]
+        args.require_full_coverage and not result["research_source_complete"]
     )
     return int(bool(failed))
 
 
-def command_live_analysis(args: argparse.Namespace) -> int:
+def command_analyze_live_data(args: argparse.Namespace) -> int:
     root = _root(args.root)
     adapter = create_source_adapter(root, args.provider)
     sourced = SourceService(root, adapter).run(
@@ -198,7 +190,6 @@ def command_live_analysis(args: argparse.Namespace) -> int:
         args,
         sourced["document"],
         "production",
-        "analysis_only",
     )
     print(
         json.dumps(
@@ -237,89 +228,12 @@ def command_validate(args: argparse.Namespace) -> int:
     return 0
 
 
-def command_paper_execute(args: argparse.Namespace) -> int:
-    root = _root(args.root)
-    registry = SchemaRegistry(root / "schemas")
-    config = ConfigBundle.load(root)
-    run_dir = root / "state" / "runs" / args.run_id
-    proposals = load_json(
-        run_dir / "validation" / "signal_proposals.json"
-    )["signal_proposals"]
-    eligible = [item for item in proposals if item["execution_eligible"]]
-    if not eligible:
-        raise ValueError("run has no execution-eligible proposals")
-    proposal = next(
-        (item for item in eligible if item["signal_id"] == args.signal_id),
-        eligible[0] if args.signal_id is None else None,
-    )
-    if proposal is None:
-        raise ValueError("signal not found or not eligible")
-    facts = load_json(run_dir / "normalized" / "facts_block.json")["facts"]
-    quote = next(
-        fact
-        for fact in facts
-        if fact["fact_type"] == "quote"
-        and fact["instrument_id"] == proposal["instrument_id"]
-    )
-    as_of = args.as_of or proposal["decision_at"]
-    intent = RiskEngine(config.risk, registry).create_intent(
-        proposal,
-        quote,
-        {
-            "buying_power_usd": args.buying_power,
-            "position_notional_usd": 0.0,
-            "portfolio_notional_usd": 0.0,
-        },
-        as_of=as_of,
-        environment="paper",
-    )
-    path = root / "state" / "executions" / ("%s.json" % intent["intent_id"])
-    if path.exists():
-        print(
-            json.dumps(
-                {
-                    "intent_id": intent["intent_id"],
-                    "path": str(path),
-                    "reused": True,
-                },
-                indent=2,
-            )
-        )
-        return 0
-    approval = ApprovalService(config.approval, registry).decide(
-        intent,
-        args.approver,
-        approved=True,
-        decided_at=as_of,
-    )
-    result = PaperBroker(registry).execute(intent, approval, as_of=as_of)
-    output = {
-        "intent": intent,
-        "approval": approval,
-        "entry_events": result.entry_events,
-        "protective_exit_events": result.protective_exit_events,
-    }
-    atomic_write_json(path, output)
-    print(
-        json.dumps(
-            {
-                "intent_id": intent["intent_id"],
-                "path": str(path),
-                "reused": False,
-            },
-            indent=2,
-        )
-    )
-    return 0
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="stocktrend")
     parser.add_argument("--root", help="repository root; defaults to current directory")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     demo = subparsers.add_parser("demo", help="run the offline cross-vendor demo")
-    demo.add_argument("--mode", choices=["analysis_only", "paper"], default="analysis_only")
     demo.add_argument(
         "--revision",
         type=int,
@@ -341,7 +255,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--producer", choices=["openai", "anthropic"])
     run.add_argument("--validator", choices=["openai", "anthropic"])
-    run.add_argument("--mode", choices=["analysis_only", "paper"], default="analysis_only")
     run.add_argument("--revision", type=int, default=1)
     run.add_argument(
         "--input-profile",
@@ -357,7 +270,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     source = subparsers.add_parser(
         "source",
-        help="build a point-in-time live market-data snapshot; never submits orders",
+        help="build a point-in-time market-data snapshot for research",
     )
     source.add_argument("--session-date", required=True)
     source.add_argument("--analysis-window", default="close")
@@ -385,8 +298,8 @@ def build_parser() -> argparse.ArgumentParser:
     source_status_parser.set_defaults(function=command_source_status)
 
     live_analysis = subparsers.add_parser(
-        "live-analysis",
-        help="source live data and run analysis-only models; never submits orders",
+        "analyze-live-data",
+        help="source current data and run the research workflow",
     )
     live_analysis.add_argument("--session-date", required=True)
     live_analysis.add_argument("--analysis-window", default="close")
@@ -403,23 +316,12 @@ def build_parser() -> argparse.ArgumentParser:
     live_analysis.add_argument("--validator", choices=["openai", "anthropic"])
     live_analysis.add_argument("--revision", type=int, default=1)
     live_analysis.add_argument("--email-to")
-    live_analysis.set_defaults(function=command_live_analysis)
+    live_analysis.set_defaults(function=command_analyze_live_data)
 
     validate = subparsers.add_parser("validate", help="validate a JSON contract")
     validate.add_argument("--schema", required=True)
     validate.add_argument("path")
     validate.set_defaults(function=command_validate)
-
-    paper = subparsers.add_parser(
-        "paper-execute",
-        help="human-approved paper execution for a finalized run",
-    )
-    paper.add_argument("--run-id", required=True)
-    paper.add_argument("--signal-id")
-    paper.add_argument("--approver", required=True)
-    paper.add_argument("--buying-power", type=float, default=10000.0)
-    paper.add_argument("--as-of")
-    paper.set_defaults(function=command_paper_execute)
 
     email_ack = subparsers.add_parser(
         "email-ack",

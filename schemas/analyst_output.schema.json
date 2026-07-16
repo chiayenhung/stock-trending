@@ -10,15 +10,12 @@
     "instrument_id",
     "symbol",
     "score",
-    "recommended_signal",
+    "assessment",
     "confidence_bucket",
     "thesis",
     "claims",
-    "entry_condition",
-    "maximum_entry_price",
-    "stop_price",
-    "target_price",
-    "time_exit_sessions",
+    "horizon_sessions",
+    "monitoring_triggers",
     "limitations",
     "producer"
   ],
@@ -28,8 +25,8 @@
     "instrument_id": {"type": "string"},
     "symbol": {"type": "string"},
     "score": {"type": "number", "minimum": 1, "maximum": 10},
-    "recommended_signal": {
-      "enum": ["no_action", "watch", "enter_long", "add_long", "reduce", "exit"]
+    "assessment": {
+      "enum": ["no_action", "watch", "positive_trend", "negative_trend"]
     },
     "confidence_bucket": {"enum": ["low", "medium", "high"]},
     "thesis": {"type": "string"},
@@ -54,11 +51,13 @@
       },
       "minItems": 1
     },
-    "entry_condition": {"type": "string"},
-    "maximum_entry_price": {"type": ["number", "null"], "exclusiveMinimum": 0},
-    "stop_price": {"type": ["number", "null"], "exclusiveMinimum": 0},
-    "target_price": {"type": ["number", "null"], "exclusiveMinimum": 0},
-    "time_exit_sessions": {"type": "integer", "minimum": 1, "maximum": 30},
+    "horizon_sessions": {"type": "integer", "minimum": 1, "maximum": 30},
+    "monitoring_triggers": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 1,
+      "uniqueItems": true
+    },
     "limitations": {"type": "array", "items": {"type": "string"}},
     "producer": {
       "type": "object",

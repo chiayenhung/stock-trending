@@ -22,5 +22,5 @@ Status: {{status}}
 
 {{validation_summary}}
 
-This artifact is research, not an order instruction. Execution consumes only
-validated structured proposals through the separate risk and approval workflow.
+This artifact is research only. It contains trend assessments and monitoring
+ideas, not transaction instructions.

@@ -1,4 +1,4 @@
-"""Deterministic and mandatory cross-vendor semantic validation."""
+"""Deterministic and cross-vendor validation for research signals."""
 
 from __future__ import annotations
 
@@ -22,22 +22,44 @@ class SemanticValidationOutcome:
             self.report["vendor_separation"] is True
             and self.report["verdict"] == "pass"
             and self.verdict.get("verdict") == "pass"
+            and not self.verdict.get("unsupported_claim_ids")
+            and not self.verdict.get("reason_codes")
         )
 
 
-def deterministic_proposal_errors(
-    proposal: Dict[str, Any],
+def deterministic_research_signal_errors(
+    signal: Dict[str, Any],
     claims: Iterable[Dict[str, Any]],
     facts_block: Dict[str, Any],
     strategy: Dict[str, Any],
 ) -> List[str]:
     errors: List[str] = []
-    if proposal.get("execution_eligible") is True:
-        errors.append("PRODUCER_SET_EXECUTION_ELIGIBLE")
-    claim_map = {claim["claim_id"]: claim for claim in claims}
+    if signal.get("research_only") is not True:
+        errors.append("RESEARCH_ONLY_BOUNDARY_VIOLATION")
+    if signal.get("strategy_id") != strategy.get("strategy_id"):
+        errors.append("STRATEGY_ID_MISMATCH")
+    if signal.get("strategy_version") != strategy.get("strategy_version"):
+        errors.append("STRATEGY_VERSION_MISMATCH")
+    assessment = signal.get("assessment")
+    if assessment not in set(strategy.get("assessments", [])):
+        errors.append("ASSESSMENT_NOT_ALLOWED")
+    horizon = signal.get("horizon_sessions")
+    limits = strategy.get("research_horizon_sessions", {})
+    if not isinstance(horizon, int) or not (
+        int(limits.get("minimum", 1))
+        <= horizon
+        <= int(limits.get("maximum", 30))
+    ):
+        errors.append("RESEARCH_HORIZON_OUT_OF_POLICY")
+
+    claim_items = list(claims)
+    claim_ids = [claim["claim_id"] for claim in claim_items]
+    if len(claim_ids) != len(set(claim_ids)):
+        errors.append("DUPLICATE_CLAIM_ID")
+    claim_map = {claim["claim_id"]: claim for claim in claim_items}
     fact_map = facts_by_id(facts_block)
     cited_facts: List[Dict[str, Any]] = []
-    for claim_id in proposal.get("evidence_claim_ids", []):
+    for claim_id in signal.get("evidence_claim_ids", []):
         claim = claim_map.get(claim_id)
         if claim is None:
             errors.append("UNKNOWN_CLAIM_ID:%s" % claim_id)
@@ -46,23 +68,15 @@ def deterministic_proposal_errors(
             fact = fact_map.get(fact_id)
             if fact is None:
                 errors.append("UNKNOWN_FACT_ID:%s" % fact_id)
-            else:
-                cited_facts.append(fact)
-    signal_type = proposal.get("signal_type")
-    actionable = signal_type in set(strategy.get("actionable_signal_types", []))
-    if actionable:
-        required = set(strategy.get("required_fact_types", {}).get(signal_type, []))
-        observed = {fact["fact_type"] for fact in cited_facts}
-        for missing in sorted(required - observed):
-            errors.append("MISSING_REQUIRED_FACT_TYPE:%s" % missing)
-        if proposal.get("stop_price") is None:
-            errors.append("MISSING_STOP")
-        if proposal.get("target_price") is None:
-            errors.append("MISSING_TARGET")
-        if not proposal.get("thesis_invalidation"):
-            errors.append("MISSING_THESIS_INVALIDATION")
-        if cited_facts and all(fact["fact_type"] == "social_post" for fact in cited_facts):
-            errors.append("SOCIAL_ONLY_ACTIONABLE_EVIDENCE")
+                continue
+            if fact.get("instrument_id") != signal.get("instrument_id"):
+                errors.append("CROSS_INSTRUMENT_EVIDENCE:%s" % fact_id)
+            cited_facts.append(fact)
+
+    required = set(strategy.get("required_fact_types", {}).get(assessment, []))
+    observed = {fact["fact_type"] for fact in cited_facts}
+    for missing in sorted(required - observed):
+        errors.append("MISSING_REQUIRED_FACT_TYPE:%s" % missing)
     return sorted(set(errors))
 
 
@@ -79,27 +93,30 @@ class CrossVendorSemanticValidator:
 
     def validate(
         self,
-        proposal: Dict[str, Any],
+        signal: Dict[str, Any],
         claims: Iterable[Dict[str, Any]],
         facts_block: Dict[str, Any],
         producer: JsonModelClient,
     ) -> SemanticValidationOutcome:
+        target_id = signal["research_signal_id"]
+        target_claim_ids = set(signal.get("evidence_claim_ids", []))
         separated = producer.vendor_id != self.validator.vendor_id
         if not separated:
             verdict = {
                 "schema_version": "1.0.0",
-                "target_id": proposal["signal_id"],
+                "target_id": target_id,
                 "verdict": "indeterminate",
                 "supported_claim_ids": [],
-                "unsupported_claim_ids": list(proposal.get("evidence_claim_ids", [])),
+                "unsupported_claim_ids": sorted(target_claim_ids),
                 "reason_codes": ["VENDOR_MATCH"],
                 "summary": "Producer and validator vendors match.",
             }
-            return self._outcome(proposal, producer, verdict, False, "unavailable")
+            return self._outcome(signal, producer, verdict, False, "unavailable")
+
         claim_map = {claim["claim_id"]: claim for claim in claims}
         selected_claims = [
             claim_map[claim_id]
-            for claim_id in proposal.get("evidence_claim_ids", [])
+            for claim_id in signal.get("evidence_claim_ids", [])
             if claim_id in claim_map
         ]
         fact_map = facts_by_id(facts_block)
@@ -133,34 +150,50 @@ class CrossVendorSemanticValidator:
                         "require_direct_support": True,
                         "same_ticker_is_not_corroboration": True,
                     },
-                    "target": proposal,
+                    "target": signal,
                     "claims": selected_claims,
                     "evidence": evidence,
                 },
                 self.registry.get("semantic_verdict"),
             )
             self.registry.validate("semantic_verdict", verdict)
-            if verdict["target_id"] != proposal["signal_id"]:
+            supported = set(verdict["supported_claim_ids"])
+            unsupported = set(verdict["unsupported_claim_ids"])
+            coverage_valid = (
+                not (supported & unsupported)
+                and supported | unsupported == target_claim_ids
+            )
+            pass_consistent = (
+                verdict["verdict"] != "pass"
+                or (not unsupported and not verdict["reason_codes"])
+            )
+            if verdict["target_id"] != target_id:
                 verdict["verdict"] = "indeterminate"
                 verdict["reason_codes"].append("TARGET_ID_MISMATCH")
+            elif not coverage_valid or not pass_consistent:
+                verdict["verdict"] = "indeterminate"
+                verdict["reason_codes"].append(
+                    "VERDICT_CLAIM_COVERAGE_MISMATCH"
+                )
+            verdict["reason_codes"] = sorted(set(verdict["reason_codes"]))
             report_verdict = verdict["verdict"]
         except Exception as exc:
             verdict = {
                 "schema_version": "1.0.0",
-                "target_id": proposal["signal_id"],
+                "target_id": target_id,
                 "verdict": "indeterminate",
                 "supported_claim_ids": [],
-                "unsupported_claim_ids": list(proposal.get("evidence_claim_ids", [])),
+                "unsupported_claim_ids": sorted(target_claim_ids),
                 "reason_codes": ["VALIDATOR_UNAVAILABLE"],
                 "summary": "Independent validator unavailable: %s"
                 % exc.__class__.__name__,
             }
             report_verdict = "unavailable"
-        return self._outcome(proposal, producer, verdict, True, report_verdict)
+        return self._outcome(signal, producer, verdict, True, report_verdict)
 
     def _outcome(
         self,
-        proposal: Dict[str, Any],
+        signal: Dict[str, Any],
         producer: JsonModelClient,
         verdict: Dict[str, Any],
         separated: bool,
@@ -168,7 +201,7 @@ class CrossVendorSemanticValidator:
     ) -> SemanticValidationOutcome:
         report = {
             "schema_version": "1.0.0",
-            "target_id": proposal["signal_id"],
+            "target_id": signal["research_signal_id"],
             "producer": {"vendor": producer.vendor_id, "model": producer.model},
             "validator": {
                 "vendor": self.validator.vendor_id,

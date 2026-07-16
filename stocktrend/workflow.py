@@ -24,7 +24,7 @@ from .state import RunIdentity, RunStore
 from .util import load_json, sha256_json
 from .validation import (
     CrossVendorSemanticValidator,
-    deterministic_proposal_errors,
+    deterministic_research_signal_errors,
 )
 
 
@@ -72,7 +72,6 @@ class AnalysisWorkflow:
     def run(
         self,
         input_document: Dict[str, Any],
-        execution_mode: str = "analysis_only",
         run_revision: int = 1,
     ) -> Dict[str, Any]:
         self._validate_input(input_document)
@@ -87,7 +86,6 @@ class AnalysisWorkflow:
             ),
             exchange_session_date=session_date,
             analysis_window=input_document.get("analysis_window", "close"),
-            execution_mode=execution_mode,
         )
         versions = {
             "input_hash": sha256_json(input_document),
@@ -105,8 +103,6 @@ class AnalysisWorkflow:
             "strategy_hash": sha256_json(self.config.strategy),
             "universe": self.config.universe["universe_version"],
             "universe_hash": sha256_json(self.config.universe),
-            "risk_policy_hash": sha256_json(self.config.risk),
-            "approval_policy_hash": sha256_json(self.config.approval),
             "tier_policy_hash": sha256_json(self.config.tiers),
             "workflow": str(self.config.workflow["workflow_version"]),
             "workflow_hash": sha256_json(self.config.workflow),
@@ -198,7 +194,7 @@ class AnalysisWorkflow:
             )
 
         if manifest["state"] == "screened":
-            context, analysts, proposals = self._analyze(
+            context, analysts, signals = self._analyze(
                 facts_block,
                 candidates,
                 as_of,
@@ -211,8 +207,8 @@ class AnalysisWorkflow:
             )
             self.store.write_json(
                 run_id,
-                "analysis/raw_signal_proposals.json",
-                {"schema_version": "1.0.0", "signal_proposals": proposals},
+                "analysis/raw_research_signals.json",
+                {"schema_version": "1.0.0", "research_signals": signals},
             )
             self.store.transition(run_id, "analyzed")
             manifest = self.store.load_manifest(run_id)
@@ -223,24 +219,24 @@ class AnalysisWorkflow:
             analysts = load_json(
                 self.store.run_dir(run_id) / "analysis" / "analyst_outputs.json"
             )["analyst_outputs"]
-            proposals = load_json(
-                self.store.run_dir(run_id) / "analysis" / "raw_signal_proposals.json"
-            )["signal_proposals"]
+            signals = load_json(
+                self.store.run_dir(run_id) / "analysis" / "raw_research_signals.json"
+            )["research_signals"]
 
         if manifest["state"] == "analyzed":
             claims = [
                 claim for analyst in analysts for claim in analyst.get("claims", [])
             ]
-            validated, reports, verdicts = self._validate_proposals(
-                proposals,
+            validated, reports, verdicts = self._validate_research_signals(
+                signals,
                 claims,
                 facts_block,
                 run_id,
             )
             self.store.write_json(
                 run_id,
-                "validation/signal_proposals.json",
-                {"schema_version": "1.0.0", "signal_proposals": validated},
+                "validation/research_signals.json",
+                {"schema_version": "1.0.0", "research_signals": validated},
             )
             self.store.write_json(
                 run_id,
@@ -256,8 +252,8 @@ class AnalysisWorkflow:
             manifest = self.store.load_manifest(run_id)
         else:
             validated = load_json(
-                self.store.run_dir(run_id) / "validation" / "signal_proposals.json"
-            )["signal_proposals"]
+                self.store.run_dir(run_id) / "validation" / "research_signals.json"
+            )["research_signals"]
             reports = load_json(
                 self.store.run_dir(run_id) / "validation" / "reports.json"
             )["reports"]
@@ -355,15 +351,15 @@ class AnalysisWorkflow:
             analyst["producer"] = self._producer_metadata()
             self.registry.validate("analyst_output", analyst)
             analysts.append(analyst)
-        proposals: List[Dict[str, Any]] = []
+        signals: List[Dict[str, Any]] = []
         if analysts:
-            signal_schema = self.registry.get("signal_proposal")
+            signal_schema = self.registry.get("research_signal")
             synthesis_schema = {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["proposals"],
+                "required": ["signals"],
                 "properties": {
-                    "proposals": {
+                    "signals": {
                         "type": "array",
                         "items": signal_schema,
                     }
@@ -384,22 +380,25 @@ class AnalysisWorkflow:
                 },
                 synthesis_schema,
             )
-            proposals = synthesis["proposals"]
+            signals = synthesis["signals"]
         analysis_ids = {item["analyst_output_id"] for item in analysts}
-        for proposal in proposals:
-            producer = proposal.setdefault("producer", {})
+        for signal in signals:
+            signal["research_only"] = True
+            signal["validation_status"] = "pending"
+            signal["validation_reason_codes"] = []
+            producer = signal.setdefault("producer", {})
             producer.update(self._producer_metadata())
             producer["analyst_output_ids"] = [
                 value
                 for value in producer.get("analyst_output_ids", [])
                 if value in analysis_ids
             ]
-            self.registry.validate("signal_proposal", proposal)
-        return context, analysts, proposals
+            self.registry.validate("research_signal", signal)
+        return context, analysts, signals
 
-    def _validate_proposals(
+    def _validate_research_signals(
         self,
-        proposals: List[Dict[str, Any]],
+        signals: List[Dict[str, Any]],
         claims: List[Dict[str, Any]],
         facts_block: Dict[str, Any],
         run_id: str,
@@ -407,54 +406,44 @@ class AnalysisWorkflow:
         validated = []
         reports = []
         verdicts = []
-        for proposal in proposals:
-            errors = deterministic_proposal_errors(
-                proposal,
+        for signal in signals:
+            errors = deterministic_research_signal_errors(
+                signal,
                 claims,
                 facts_block,
                 self.config.strategy,
             )
-            proposal["execution_eligible"] = False
-            proposal["eligibility_reasons"] = errors or ["PENDING_SEMANTIC_VALIDATION"]
-            if proposal["signal_type"] in self.config.actionable_signals:
-                outcome = self.semantic_validator.validate(
-                    proposal,
-                    claims,
-                    facts_block,
-                    self.producer,
-                )
-                reports.append(outcome.report)
-                verdicts.append(outcome.verdict)
-                blocking_degraded = self.store.load_manifest(run_id)[
-                    "degraded_reasons"
-                ]
-                if outcome.passed and not errors and not blocking_degraded:
-                    proposal["execution_eligible"] = True
-                    proposal["eligibility_reasons"] = ["ALL_VALIDATION_GATES_PASSED"]
-                else:
-                    reason_codes = list(outcome.report["reason_codes"])
-                    proposal["eligibility_reasons"] = sorted(
-                        set(
-                            errors
-                            + reason_codes
-                            + blocking_degraded
-                            + ["RESEARCH_ONLY"]
-                        )
-                    )
-                    if outcome.report["verdict"] == "unavailable":
-                        self.store.add_degraded_reason(
-                            run_id,
-                            "INDEPENDENT_VALIDATOR_UNAVAILABLE",
-                        )
-                    if not outcome.report["vendor_separation"]:
-                        self.store.add_degraded_reason(
-                            run_id,
-                            "VALIDATOR_VENDOR_MATCH",
-                        )
+            signal["research_only"] = True
+            outcome = self.semantic_validator.validate(
+                signal,
+                claims,
+                facts_block,
+                self.producer,
+            )
+            reports.append(outcome.report)
+            verdicts.append(outcome.verdict)
+            if outcome.passed and not errors:
+                signal["validation_status"] = "pass"
+                signal["validation_reason_codes"] = []
             else:
-                proposal["eligibility_reasons"] = ["NON_ACTIONABLE_SIGNAL"]
-            self.registry.validate("signal_proposal", proposal)
-            validated.append(proposal)
+                signal["validation_status"] = (
+                    "reject" if errors else outcome.report["verdict"]
+                )
+                signal["validation_reason_codes"] = sorted(
+                    set(errors + list(outcome.report["reason_codes"]))
+                )
+            if outcome.report["verdict"] == "unavailable":
+                self.store.add_degraded_reason(
+                    run_id,
+                    "INDEPENDENT_VALIDATOR_UNAVAILABLE",
+                )
+            if not outcome.report["vendor_separation"]:
+                self.store.add_degraded_reason(
+                    run_id,
+                    "VALIDATOR_VENDOR_MATCH",
+                )
+            self.registry.validate("research_signal", signal)
+            validated.append(signal)
         return validated, reports, verdicts
 
     def _producer_metadata(self) -> Dict[str, str]:
