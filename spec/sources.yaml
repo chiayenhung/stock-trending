@@ -8,13 +8,48 @@ sources:
     enabled: false
     credential_scope: read_only
   news:
-    enabled: false
+    enabled: true
     content_is_untrusted: true
+    adapter: sec_edgar_html
+    page_url: https://www.sec.gov/cgi-bin/browse-edgar
+    allowed_host: www.sec.gov
+    user_agent_env: STOCKTREND_SEC_USER_AGENT
+    timeout_seconds: 20
+    max_age_days: 90
+    max_items_per_instrument: 2
+    form_types: [8-K, 10-K, 10-Q, 6-K, 20-F]
+    license_class: us_government_public_content
+    extraction:
+      method: deterministic_html
+      llm_fallback_enabled: false
+      model: null
   industry:
-    enabled: false
+    enabled: true
     content_is_untrusted: true
+    adapter: eia_today_in_energy_html
+    page_url: https://www.eia.gov/todayinenergy/
+    allowed_host: www.eia.gov
+    timeout_seconds: 20
+    max_age_days: 60
+    max_items: 3
+    applicable_buckets: [power_infrastructure]
+    relevance_keywords:
+      - electricity
+      - electric grid
+      - generation
+      - generating capacity
+      - nuclear
+      - solar
+      - wind
+      - data center
+      - power demand
+    license_class: us_government_public_content
+    extraction:
+      method: deterministic_html
+      llm_fallback_enabled: false
+      model: null
   social:
-    enabled: false
+    enabled: true
     content_is_untrusted: true
     official_api_required: true
     allowlist: []

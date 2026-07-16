@@ -14,7 +14,7 @@
     "source_snapshot": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["snapshot_id", "profile", "provider", "universe_id", "universe_version", "universe_hash", "created_at", "freshness_deadline", "observations_hash", "coverage_status", "coverage", "instrument_buckets", "errors"],
+      "required": ["snapshot_id", "profile", "provider", "universe_id", "universe_version", "universe_hash", "created_at", "freshness_deadline", "observations_hash", "coverage_status", "coverage", "instrument_buckets", "errors", "enrichments"],
       "properties": {
         "snapshot_id": {"type": "string", "pattern": "^snapshot_[a-f0-9]{24}$"},
         "profile": {"const": "production"},
@@ -66,6 +66,16 @@
               "code": {"type": "string"}
             }
           }
+        },
+        "enrichments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["news", "industry", "social"],
+          "properties": {
+            "news": {"$ref": "#/$defs/enrichmentStatus"},
+            "industry": {"$ref": "#/$defs/enrichmentStatus"},
+            "social": {"$ref": "#/$defs/enrichmentStatus"}
+          }
         }
       }
     },
@@ -74,6 +84,24 @@
       "items": {
         "type": "object",
         "required": ["fact_type", "instrument_id", "symbol", "venue", "observed_at", "retrieved_at", "value", "source", "trust"]
+      }
+    }
+  },
+  "$defs": {
+    "enrichmentStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "adapter", "status", "observation_count", "attempted", "failed", "error_code", "extraction_method", "model"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "adapter": {"type": ["string", "null"]},
+        "status": {"enum": ["disabled", "success", "partial", "unavailable"]},
+        "observation_count": {"type": "integer", "minimum": 0},
+        "attempted": {"type": "integer", "minimum": 0},
+        "failed": {"type": "integer", "minimum": 0},
+        "error_code": {"type": ["string", "null"]},
+        "extraction_method": {"const": "deterministic"},
+        "model": {"type": "null"}
       }
     }
   }

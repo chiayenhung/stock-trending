@@ -231,7 +231,14 @@ def test_gateway_adapter_uses_header_token_and_normalizes_numeric_data() -> None
     assert captured["timeout"] == 30
 
 
-def test_tiingo_adapter_uses_header_token_and_derives_metrics() -> None:
+@pytest.mark.parametrize(
+    ("current_volume", "expected_volume_ratio"),
+    [(1_500.0, 1.5), (0.0, 0.0)],
+)
+def test_tiingo_adapter_uses_header_token_and_derives_metrics(
+    current_volume: float,
+    expected_volume_ratio: float,
+) -> None:
     captured = []
     history = []
     first_day = date(2026, 6, 25)
@@ -260,7 +267,7 @@ def test_tiingo_adapter_uses_header_token_and_derives_metrics() -> None:
                     "tngoLast": 120.0,
                     "lqBidPrice": 119.9,
                     "lqAskPrice": 120.1,
-                    "volume": 1_500.0,
+                    "volume": current_volume,
                 }
             ]
         return history
@@ -276,7 +283,7 @@ def test_tiingo_adapter_uses_header_token_and_derives_metrics() -> None:
     assert record["quote"]["price"] == 120.0
     assert parse_datetime(record["quote"]["observed_at"]).microsecond == 123456
     assert record["bar_metrics"]["average_volume_20d"] == 1_000.0
-    assert record["bar_metrics"]["volume_ratio"] == 1.5
+    assert record["bar_metrics"]["volume_ratio"] == expected_volume_ratio
     assert record["bar_metrics"]["momentum_20d_pct"] == pytest.approx(20.0)
     assert len(captured) == 2
     assert all(item["authorization"] == "Token tiingo-secret" for item in captured)

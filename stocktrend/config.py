@@ -78,6 +78,35 @@ class ConfigBundle:
                 raise SafetyViolation(
                     "source adapter %s must reject redirects" % name
                 )
+        source_policies = self.sources.get("sources", {})
+        for name in ("news", "industry", "social"):
+            source = source_policies.get(name, {})
+            if source.get("enabled") is not True:
+                continue
+            if source.get("content_is_untrusted") is not True:
+                raise SafetyViolation(
+                    "enabled %s content must remain untrusted" % name
+                )
+            extraction = source.get("extraction", {})
+            if name in ("news", "industry"):
+                if extraction.get("method") != "deterministic_html":
+                    raise ConfigurationError(
+                        "%s public-web extraction must be deterministic" % name
+                    )
+                if extraction.get("llm_fallback_enabled") is not False:
+                    raise SafetyViolation(
+                        "%s public-web LLM fallback must remain disabled" % name
+                    )
+                if extraction.get("model") is not None:
+                    raise SafetyViolation(
+                        "%s public-web extraction must not configure a model" % name
+                    )
+            if name == "news" and not source.get("user_agent_env"):
+                raise ConfigurationError(
+                    "news public-web source must declare a user-agent environment variable"
+                )
+            if name == "social" and source.get("official_api_required") is not True:
+                raise SafetyViolation("social sourcing requires an official API")
         required_buckets = self.universe.get("required_buckets", [])
         if len(required_buckets) != len(set(required_buckets)):
             raise ConfigurationError("universe required buckets must be unique")

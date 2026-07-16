@@ -137,6 +137,26 @@ After configuring the Tiingo token, build and check a snapshot:
 .venv/bin/stocktrend source-status --require-full-coverage
 ~~~
 
+When enabled in `spec/sources.yaml`, production sourcing also reads two public
+HTML sources without API credentials:
+
+- company-specific SEC EDGAR filing listings become `news` facts;
+- EIA Today in Energy articles relevant to electricity and generation become
+  `industry_datapoint` facts for the power-infrastructure bucket.
+
+Both adapters reject redirects, allowlist their hosts, retain only normalized
+structured facts and source URLs, and treat all page text as untrusted data.
+Extraction is deterministic and makes no model call; the configured LLM
+fallback is intentionally disabled. An unavailable optional enrichment adds a
+degraded reason to analysis instead of being silently omitted. Social sourcing
+remains unavailable until an official adapter and non-empty allowlist are
+configured.
+
+SEC requires automated tools to declare their identity and contact address.
+Set `STOCKTREND_SEC_USER_AGENT` to an application name plus a monitored contact
+email before live sourcing. This value is sent only as the SEC request
+`User-Agent`; it is never passed to a model or written into source snapshots.
+
 Or source and analyze in one command:
 
 ~~~bash

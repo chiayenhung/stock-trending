@@ -164,6 +164,7 @@ def command_source(args: argparse.Namespace) -> int:
                 "snapshot_id": metadata["snapshot_id"],
                 "coverage_status": metadata["coverage_status"],
                 "coverage": metadata["coverage"],
+                "enrichments": metadata["enrichments"],
                 "snapshot_path": result["snapshot_path"],
                 "output_path": result["output_path"],
                 "heartbeat_status": result["heartbeat"]["status"],
@@ -205,6 +206,9 @@ def command_live_analysis(args: argparse.Namespace) -> int:
                 "source_snapshot": sourced["snapshot_path"],
                 "source_coverage_status": sourced["document"]["source_snapshot"][
                     "coverage_status"
+                ],
+                "source_enrichments": sourced["document"]["source_snapshot"][
+                    "enrichments"
                 ],
                 "analysis": analysis,
             },

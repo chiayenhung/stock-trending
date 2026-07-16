@@ -24,6 +24,11 @@ from .util import (
     sha256_json,
     utc_now,
 )
+from .web_sources import (
+    EiaIndustryAdapter,
+    ReadOnlyEnrichmentAdapter,
+    SecEdgarNewsAdapter,
+)
 
 
 class SourceAdapterError(ProviderError):
@@ -262,7 +267,7 @@ class TiingoMarketDataAdapter(ReadOnlyMarketDataAdapter):
         ask = _positive_number(snapshot, "lqAskPrice")
         if ask < bid:
             raise SourceAdapterError("SOURCE_QUOTE_CROSSED")
-        current_volume = _positive_number(snapshot, "volume")
+        current_volume = _nonnegative_number(snapshot, "volume")
 
         prior_bars: List[Tuple[date, float, float]] = []
         for item in history_value:
@@ -370,6 +375,9 @@ class SourceService:
         root: Path,
         adapter: ReadOnlyMarketDataAdapter,
         clock: Callable[[], datetime] = utc_now,
+        enrichment_adapters: Optional[
+            Mapping[str, ReadOnlyEnrichmentAdapter]
+        ] = None,
     ):
         self.root = root
         self.adapter = adapter
@@ -377,6 +385,11 @@ class SourceService:
         self.config = ConfigBundle.load(root)
         self.registry = SchemaRegistry(root / "schemas")
         self.heartbeat_path = root / "state" / "sourcing" / "heartbeat.json"
+        self.enrichment_adapters = (
+            dict(enrichment_adapters)
+            if enrichment_adapters is not None
+            else _create_enrichment_adapters(self.config.sources)
+        )
 
     def run(
         self,
@@ -524,6 +537,12 @@ class SourceService:
             )
             instrument_buckets[instrument["instrument_id"]] = bucket
             bucket_counts[bucket]["valid"] += 1
+        enrichments, enrichment_observations = self._collect_enrichments(
+            instruments,
+            session,
+            completed_at,
+        )
+        observations.extend(enrichment_observations)
         minimum_per_bucket = int(universe["coverage"]["minimum_valid_per_bucket"])
         minimum_total = int(universe["coverage"]["minimum_valid_total"])
         valid_total = sum(item["valid"] for item in bucket_counts.values())
@@ -574,6 +593,7 @@ class SourceService:
                 "coverage": coverage,
                 "instrument_buckets": instrument_buckets,
                 "errors": errors,
+                "enrichments": enrichments,
             },
             "observations": observations,
         }
@@ -603,6 +623,79 @@ class SourceService:
             "output_path": str(output_path) if output_path is not None else None,
             "heartbeat": heartbeat,
         }
+
+    def _collect_enrichments(
+        self,
+        instruments: List[Dict[str, Any]],
+        session: date,
+        retrieved_at: str,
+    ) -> Tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]]]:
+        statuses: Dict[str, Dict[str, Any]] = {}
+        observations: List[Dict[str, Any]] = []
+        configured_sources = self.config.sources.get("sources", {})
+        for source_kind in ("news", "industry", "social"):
+            source_config = configured_sources.get(source_kind, {})
+            enabled = source_config.get("enabled") is True
+            adapter = self.enrichment_adapters.get(source_kind)
+            configured_adapter = source_config.get("adapter")
+            status = {
+                "enabled": enabled,
+                "adapter": (
+                    adapter.adapter_id
+                    if adapter is not None
+                    else configured_adapter
+                ),
+                "status": "disabled" if not enabled else "unavailable",
+                "observation_count": 0,
+                "attempted": 0,
+                "failed": 0,
+                "error_code": None,
+                "extraction_method": (
+                    adapter.extraction_method
+                    if adapter is not None
+                    else "deterministic"
+                ),
+                "model": adapter.model if adapter is not None else None,
+            }
+            if not enabled:
+                statuses[source_kind] = status
+                continue
+            if adapter is None:
+                if (
+                    source_kind == "news"
+                    and source_config.get("user_agent_env")
+                    and not os.environ.get(
+                        str(source_config["user_agent_env"]), ""
+                    ).strip()
+                ):
+                    status["error_code"] = "NEWS_USER_AGENT_MISSING"
+                elif source_kind == "social" and not source_config.get("allowlist"):
+                    status["error_code"] = "SOCIAL_ALLOWLIST_EMPTY"
+                else:
+                    status["error_code"] = "%s_ADAPTER_UNCONFIGURED" % (
+                        source_kind.upper()
+                    )
+                statuses[source_kind] = status
+                continue
+            result = adapter.fetch_observations(
+                instruments,
+                session.isoformat(),
+                retrieved_at,
+            )
+            status["observation_count"] = len(result.observations)
+            status["attempted"] = result.attempted
+            status["failed"] = result.failed
+            status["error_code"] = result.error_code
+            if result.failed:
+                status["status"] = "partial" if result.observations else "unavailable"
+            elif result.observations:
+                status["status"] = "success"
+            else:
+                status["status"] = "unavailable"
+                status["error_code"] = "%s_SOURCE_EMPTY" % source_kind.upper()
+            observations.extend(result.observations)
+            statuses[source_kind] = status
+        return statuses, observations
 
     def _write_heartbeat(self, heartbeat: Dict[str, Any]) -> None:
         self.registry.validate("source_heartbeat", heartbeat)
@@ -735,6 +828,56 @@ def create_source_adapter(
     raise ConfigurationError("unsupported source adapter: %s" % selected_name)
 
 
+def _create_enrichment_adapters(
+    sources_config: Mapping[str, Any],
+) -> Dict[str, ReadOnlyEnrichmentAdapter]:
+    adapters: Dict[str, ReadOnlyEnrichmentAdapter] = {}
+    configured_sources = sources_config.get("sources", {})
+    news = configured_sources.get("news", {})
+    news_user_agent = os.environ.get(
+        str(news.get("user_agent_env", "")), ""
+    ).strip()
+    if (
+        news.get("enabled") is True
+        and news.get("adapter") == "sec_edgar_html"
+        and news_user_agent
+    ):
+        adapters["news"] = SecEdgarNewsAdapter(
+            page_url=str(news["page_url"]),
+            allowed_host=str(news["allowed_host"]),
+            license_class=str(news["license_class"]),
+            user_agent=news_user_agent,
+            timeout_seconds=int(news["timeout_seconds"]),
+            max_age_days=int(news["max_age_days"]),
+            max_items_per_instrument=int(news["max_items_per_instrument"]),
+            form_types=list(news["form_types"]),
+        )
+    industry = configured_sources.get("industry", {})
+    if (
+        industry.get("enabled") is True
+        and industry.get("adapter") == "eia_today_in_energy_html"
+    ):
+        adapters["industry"] = EiaIndustryAdapter(
+            page_url=str(industry["page_url"]),
+            allowed_host=str(industry["allowed_host"]),
+            license_class=str(industry["license_class"]),
+            timeout_seconds=int(industry["timeout_seconds"]),
+            max_age_days=int(industry["max_age_days"]),
+            max_items=int(industry["max_items"]),
+            applicable_buckets=list(industry["applicable_buckets"]),
+            relevance_keywords=list(industry["relevance_keywords"]),
+        )
+    return adapters
+
+
+def _enrichment_degraded_reasons(metadata: Mapping[str, Any]) -> List[str]:
+    reasons = []
+    for source_kind, status in metadata.get("enrichments", {}).items():
+        if status.get("enabled") is True and status.get("status") != "success":
+            reasons.append("%s_SOURCE_UNAVAILABLE" % source_kind.upper())
+    return reasons
+
+
 def source_status(
     root: Path,
     now: Optional[datetime] = None,
@@ -771,6 +914,24 @@ def source_status(
         if heartbeat["status"] == "incomplete"
         else []
     )
+    snapshot_path_value = heartbeat.get("snapshot_path")
+    if snapshot_path_value:
+        snapshot_path = Path(str(snapshot_path_value)).resolve()
+        snapshot_root = (root / "state" / "source_snapshots").resolve()
+        try:
+            snapshot_path.relative_to(snapshot_root)
+        except ValueError:
+            blocking.append("SOURCE_SNAPSHOT_PATH_INVALID")
+        else:
+            if not snapshot_path.exists():
+                blocking.append("SOURCE_SNAPSHOT_MISSING")
+            else:
+                snapshot = load_json(snapshot_path)
+                degraded.extend(
+                    _enrichment_degraded_reasons(
+                        snapshot.get("source_snapshot", {})
+                    )
+                )
     analysis_allowed = not blocking and heartbeat["status"] in (
         "success",
         "incomplete",
@@ -824,15 +985,60 @@ def validate_run_input(
         raise ContractError("snapshot observations hash mismatch")
     if not document["observations"]:
         raise ContractError("production snapshot has no valid observations")
+    configured_sources = config.sources.get("sources", {})
+    allowed_enrichment_providers = {
+        str(value.get("adapter")): str(value.get("allowed_host", ""))
+        for key, value in configured_sources.items()
+        if key in ("news", "industry", "social")
+        and isinstance(value, dict)
+        and value.get("enabled") is True
+        and value.get("adapter")
+    }
+    enrichments = metadata.get("enrichments", {})
+    if not isinstance(enrichments, dict):
+        raise ContractError("snapshot enrichment status is missing")
+    for source_kind in ("news", "industry", "social"):
+        source_config = configured_sources.get(source_kind, {})
+        status_value = enrichments.get(source_kind)
+        if not isinstance(status_value, dict):
+            raise ContractError("snapshot enrichment status is incomplete")
+        if status_value.get("enabled") is not (
+            source_config.get("enabled") is True
+        ):
+            raise ContractError(
+                "snapshot enrichment enablement does not match configuration"
+            )
+        configured_adapter = source_config.get("adapter")
+        if status_value.get("adapter") != configured_adapter:
+            raise ContractError("snapshot enrichment adapter does not match configuration")
+        if status_value.get("model") is not None:
+            raise SafetyViolation("public-web extraction must not invoke a model")
+    provider_counts: Dict[str, int] = {}
     for observation in document["observations"]:
         source = observation.get("source", {})
         trust = observation.get("trust", {})
-        if source.get("provider") != approved_name:
-            raise SafetyViolation("observation provider does not match snapshot")
+        provider = str(source.get("provider", ""))
+        provider_counts[provider] = provider_counts.get(provider, 0) + 1
+        if observation.get("fact_type") in ("quote", "bar_metrics"):
+            if provider != approved_name:
+                raise SafetyViolation("market observation provider does not match snapshot")
+        elif provider in allowed_enrichment_providers:
+            source_url = str(source.get("url", ""))
+            validate_public_https_url(source_url)
+            source_host = (urlsplit(source_url).hostname or "").lower().rstrip(".")
+            if source_host != allowed_enrichment_providers[provider].lower().rstrip("."):
+                raise SafetyViolation("enrichment observation host is not allowlisted")
+        else:
+            raise SafetyViolation("observation provider is not approved")
         if trust.get("extraction_method") == "fixture" or trust.get(
             "provenance_class"
         ) == "fixture":
             raise SafetyViolation("fixture provenance is prohibited in production")
+    for status_value in enrichments.values():
+        adapter_name = status_value.get("adapter")
+        expected_count = provider_counts.get(str(adapter_name), 0) if adapter_name else 0
+        if status_value.get("observation_count") != expected_count:
+            raise ContractError("snapshot enrichment observation count mismatch")
     current = now or utc_now()
     if current > parse_datetime(metadata["freshness_deadline"]):
         raise SafetyViolation("source snapshot is stale")
@@ -862,4 +1068,5 @@ def validate_run_input(
         "SOURCE_COVERAGE_INCOMPLETE" not in degraded
     ):
         degraded.append("SOURCE_COVERAGE_INCOMPLETE")
+    degraded.extend(_enrichment_degraded_reasons(metadata))
     return sorted(set(degraded))
