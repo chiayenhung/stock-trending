@@ -88,13 +88,25 @@ all proposals remain non-executable.
 ## Live market-data analysis
 
 Live market-data analysis is implemented separately from trading. It uses the
-versioned four-bucket universe in `spec/universe.yaml` and a normalized,
-read-only HTTPS gateway. The adapter is disabled by default until the endpoint,
-license, retention policy, allowlisted host, and read-only credential have been
-approved. Live order submission remains unavailable.
+versioned four-bucket universe in `spec/universe.yaml`. The approved adapter is
+Tiingo's data-only HTTPS API at `https://api.tiingo.com`; it uses the official
+consolidated equity snapshot and adjusted end-of-day history endpoints. The
+adapter derives the 20-session average volume, current volume ratio, and
+20-session momentum deterministically. Live order submission remains
+unavailable.
 
-The gateway receives `GET` requests with `symbol` and `session_date` query
-parameters, a bearer token in the `Authorization` header, and must return:
+Create a Tiingo account, review its internal-use license, and obtain the API
+token from `https://api.tiingo.com/account/api/token`. Put the token only in
+`STOCKTREND_TIINGO_API_TOKEN` in `.env`; the adapter sends it in the
+`Authorization` header and never in a URL. The free plan permits 50 requests per
+hour, exactly enough for one 25-symbol sourcing pass (one snapshot and one
+history request per symbol), so other API activity can cause a fail-closed rate
+limit error.
+
+The generic normalized HTTPS gateway remains available as a disabled fallback.
+If it is reviewed and selected as `production.approved_adapter`, it receives
+`GET` requests with `symbol` and `session_date` query parameters, a bearer token
+in the `Authorization` header, and must return:
 
 ~~~json
 {
@@ -117,9 +129,7 @@ parameters, a bearer token in the `Authorization` header, and must return:
 }
 ~~~
 
-After approval, set `adapters.http_json_gateway.enabled: true` in
-`spec/sources.yaml` and configure the three environment variables documented in
-`.env.example`. Then build and check a snapshot:
+After configuring the Tiingo token, build and check a snapshot:
 
 ~~~bash
 .venv/bin/stocktrend source --session-date YYYY-MM-DD

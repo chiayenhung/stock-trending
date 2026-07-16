@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 from .config import ConfigBundle
 from .contracts import SchemaRegistry
@@ -57,7 +57,7 @@ class _RejectRedirects(urllib.request.HTTPRedirectHandler):
 def _default_http_transport(
     request: urllib.request.Request,
     timeout_seconds: int,
-) -> Dict[str, Any]:
+) -> Any:
     opener = urllib.request.build_opener(_RejectRedirects())
     try:
         with opener.open(request, timeout=timeout_seconds) as response:
@@ -74,8 +74,6 @@ def _default_http_transport(
         value = json.loads(body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise SourceAdapterError("SOURCE_RESPONSE_NOT_JSON") from exc
-    if not isinstance(value, dict):
-        raise SourceAdapterError("SOURCE_RESPONSE_NOT_OBJECT")
     return value
 
 
@@ -92,7 +90,7 @@ class HttpJsonGatewayAdapter(ReadOnlyMarketDataAdapter):
         license_class: str,
         timeout_seconds: int = 30,
         transport: Optional[
-            Callable[[urllib.request.Request, int], Dict[str, Any]]
+            Callable[[urllib.request.Request, int], Any]
         ] = None,
     ):
         validate_public_https_url(endpoint)
@@ -134,6 +132,8 @@ class HttpJsonGatewayAdapter(ReadOnlyMarketDataAdapter):
             method="GET",
         )
         value = self.transport(request, self.timeout_seconds)
+        if not isinstance(value, dict):
+            raise SourceAdapterError("SOURCE_RESPONSE_NOT_OBJECT")
         return self._normalize_response(value, str(instrument["symbol"]))
 
     @staticmethod
@@ -168,6 +168,160 @@ class HttpJsonGatewayAdapter(ReadOnlyMarketDataAdapter):
             "quote": normalized_quote,
             "bar_metrics": normalized_metrics,
         }
+
+
+class TiingoMarketDataAdapter(ReadOnlyMarketDataAdapter):
+    """Read-only Tiingo adapter for live research snapshots and EOD history."""
+
+    adapter_id = "tiingo_market_data"
+
+    def __init__(
+        self,
+        base_url: str,
+        allowed_host: str,
+        token: str,
+        license_class: str,
+        timeout_seconds: int = 30,
+        transport: Optional[Callable[[urllib.request.Request, int], Any]] = None,
+    ):
+        validate_public_https_url(base_url)
+        parsed = urlsplit(base_url)
+        normalized_host = (parsed.hostname or "").lower().rstrip(".")
+        if normalized_host != allowed_host.lower().rstrip("."):
+            raise SafetyViolation("Tiingo endpoint host is not allowlisted")
+        if parsed.query or parsed.fragment:
+            raise SafetyViolation("Tiingo base URL must not contain query or fragment")
+        if not token:
+            raise ConfigurationError("Tiingo read-only API token is required")
+        if timeout_seconds < 1 or timeout_seconds > 60:
+            raise ConfigurationError("market-data timeout must be between 1 and 60 seconds")
+        self.source_url = base_url.rstrip("/")
+        self.allowed_host = normalized_host
+        self.token = token
+        self.license_class = license_class
+        self.timeout_seconds = timeout_seconds
+        self.transport = transport or _default_http_transport
+
+    def fetch_market_record(
+        self,
+        instrument: Mapping[str, Any],
+        session_date: str,
+    ) -> Dict[str, Any]:
+        symbol = str(instrument["symbol"]).upper()
+        try:
+            session = date.fromisoformat(session_date)
+        except ValueError as exc:
+            raise SourceAdapterError("SOURCE_SESSION_DATE_INVALID") from exc
+        encoded_symbol = quote(symbol, safe="")
+        snapshot = self._get_json(
+            "/tiingo/equity/intraday/%s" % encoded_symbol,
+            {},
+        )
+        history = self._get_json(
+            "/tiingo/daily/%s/prices" % encoded_symbol,
+            {
+                "startDate": (session - timedelta(days=60)).isoformat(),
+                "endDate": session.isoformat(),
+                "resampleFreq": "daily",
+            },
+        )
+        return self._normalize_response(snapshot, history, symbol, session)
+
+    def _get_json(self, path: str, parameters: Mapping[str, str]) -> Any:
+        query = urlencode(dict(parameters))
+        url = "%s%s" % (self.source_url, path)
+        if query:
+            url = "%s?%s" % (url, query)
+        parsed = urlsplit(url)
+        if (parsed.hostname or "").lower().rstrip(".") != self.allowed_host:
+            raise SafetyViolation("Tiingo request host is not allowlisted")
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Authorization": "Token %s" % self.token,
+                "Accept": "application/json",
+                "User-Agent": "stocktrend-source/1.0",
+            },
+            method="GET",
+        )
+        return self.transport(request, self.timeout_seconds)
+
+    @staticmethod
+    def _normalize_response(
+        snapshot_value: Any,
+        history_value: Any,
+        symbol: str,
+        session: date,
+    ) -> Dict[str, Any]:
+        snapshot = _single_tiingo_snapshot(snapshot_value, symbol)
+        if not isinstance(history_value, list):
+            raise SourceAdapterError("SOURCE_HISTORY_NOT_ARRAY")
+        timestamp = _required_timestamp(snapshot, "timestamp")
+        price = _positive_number(snapshot, "tngoLast")
+        bid = _positive_number(snapshot, "lqBidPrice")
+        ask = _positive_number(snapshot, "lqAskPrice")
+        if ask < bid:
+            raise SourceAdapterError("SOURCE_QUOTE_CROSSED")
+        current_volume = _positive_number(snapshot, "volume")
+
+        prior_bars: List[Tuple[date, float, float]] = []
+        for item in history_value:
+            if not isinstance(item, dict):
+                raise SourceAdapterError("SOURCE_HISTORY_RECORD_INVALID")
+            raw_date = item.get("date")
+            if not isinstance(raw_date, str):
+                raise SourceAdapterError("SOURCE_HISTORY_RECORD_INVALID")
+            try:
+                bar_date = date.fromisoformat(raw_date[:10])
+            except ValueError as exc:
+                raise SourceAdapterError("SOURCE_HISTORY_RECORD_INVALID") from exc
+            if bar_date >= session:
+                continue
+            prior_bars.append(
+                (
+                    bar_date,
+                    _positive_number(item, "adjClose"),
+                    _positive_number(item, "adjVolume"),
+                )
+            )
+        prior_bars.sort(key=lambda item: item[0], reverse=True)
+        if len(prior_bars) < 20:
+            raise SourceAdapterError("SOURCE_HISTORY_INSUFFICIENT")
+        window = prior_bars[:20]
+        average_volume = sum(item[2] for item in window) / 20.0
+        comparison_close = window[-1][1]
+        momentum = ((price / comparison_close) - 1.0) * 100.0
+        volume_ratio = current_volume / average_volume
+        history_record_date = window[0][0].isoformat()
+        return {
+            "quote": {
+                "record_id": "tiingo:%s:snapshot:%s" % (symbol, timestamp),
+                "observed_at": timestamp,
+                "price": price,
+                "bid": bid,
+                "ask": ask,
+            },
+            "bar_metrics": {
+                "record_id": "tiingo:%s:history:%s" % (symbol, history_record_date),
+                "observed_at": timestamp,
+                "average_volume_20d": average_volume,
+                "volume_ratio": volume_ratio,
+                "momentum_20d_pct": momentum,
+            },
+        }
+
+
+def _single_tiingo_snapshot(value: Any, symbol: str) -> Mapping[str, Any]:
+    if isinstance(value, dict):
+        candidates = [value]
+    elif isinstance(value, list):
+        candidates = [item for item in value if isinstance(item, dict)]
+    else:
+        raise SourceAdapterError("SOURCE_RESPONSE_NOT_OBJECT")
+    for item in candidates:
+        if str(item.get("ticker", "")).upper() == symbol.upper():
+            return item
+    raise SourceAdapterError("SOURCE_SYMBOL_MISMATCH")
 
 
 def _required_text(value: Mapping[str, Any], key: str) -> str:
@@ -555,20 +709,30 @@ def create_source_adapter(
     adapter = config.sources["adapters"].get(selected_name)
     if not isinstance(adapter, dict) or adapter.get("enabled") is not True:
         raise ConfigurationError("approved market-data adapter is disabled")
-    if selected_name != "http_json_gateway":
-        raise ConfigurationError("unsupported source adapter: %s" % selected_name)
-    endpoint = os.environ.get(str(adapter["endpoint_env"]), "").strip()
-    allowed_host = os.environ.get(str(adapter["allowed_host_env"]), "").strip()
     token = os.environ.get(str(adapter["token_env"]), "").strip()
-    if not endpoint or not allowed_host:
-        raise ConfigurationError("market-data endpoint and allowlisted host are required")
-    return HttpJsonGatewayAdapter(
-        endpoint=endpoint,
-        allowed_host=allowed_host,
-        token=token,
-        license_class=str(adapter["license_class"]),
-        timeout_seconds=int(adapter["timeout_seconds"]),
-    )
+    if selected_name == "http_json_gateway":
+        endpoint = os.environ.get(str(adapter["endpoint_env"]), "").strip()
+        allowed_host = os.environ.get(str(adapter["allowed_host_env"]), "").strip()
+        if not endpoint or not allowed_host:
+            raise ConfigurationError(
+                "market-data endpoint and allowlisted host are required"
+            )
+        return HttpJsonGatewayAdapter(
+            endpoint=endpoint,
+            allowed_host=allowed_host,
+            token=token,
+            license_class=str(adapter["license_class"]),
+            timeout_seconds=int(adapter["timeout_seconds"]),
+        )
+    if selected_name == "tiingo_market_data":
+        return TiingoMarketDataAdapter(
+            base_url=str(adapter["base_url"]),
+            allowed_host=str(adapter["allowed_host"]),
+            token=token,
+            license_class=str(adapter["license_class"]),
+            timeout_seconds=int(adapter["timeout_seconds"]),
+        )
+    raise ConfigurationError("unsupported source adapter: %s" % selected_name)
 
 
 def source_status(

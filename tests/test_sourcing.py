@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Set
 
@@ -16,6 +16,7 @@ from stocktrend.sourcing import (
     ReadOnlyMarketDataAdapter,
     SourceAdapterError,
     SourceService,
+    TiingoMarketDataAdapter,
     create_source_adapter,
     source_status,
     validate_run_input,
@@ -27,8 +28,8 @@ NOW_TEXT = "2026-07-15T20:00:00Z"
 
 
 class FakeMarketDataAdapter(ReadOnlyMarketDataAdapter):
-    adapter_id = "http_json_gateway"
-    source_url = "https://market.example.com/v1/snapshot"
+    adapter_id = "tiingo_market_data"
+    source_url = "https://api.tiingo.com"
     license_class = "test_market_data"
 
     def __init__(self, fail_symbols: Optional[Set[str]] = None):
@@ -65,10 +66,11 @@ def _clock():
     return parse_datetime(NOW_TEXT)
 
 
-def _enable_gateway(project_root: Path) -> None:
+def _enable_approved_adapter(project_root: Path) -> None:
     path = project_root / "spec" / "sources.yaml"
     value = yaml.safe_load(path.read_text(encoding="utf-8"))
-    value["adapters"]["http_json_gateway"]["enabled"] = True
+    approved = value["production"]["approved_adapter"]
+    value["adapters"][approved]["enabled"] = True
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
 
 
@@ -98,7 +100,7 @@ def test_source_service_builds_ready_four_bucket_snapshot(project_root: Path) ->
 
 
 def test_production_snapshot_validation_and_balanced_screen(project_root: Path) -> None:
-    _enable_gateway(project_root)
+    _enable_approved_adapter(project_root)
     result = SourceService(
         project_root,
         FakeMarketDataAdapter(),
@@ -143,7 +145,7 @@ def test_incomplete_coverage_is_research_only_not_silently_ready(
         for bucket in universe["required_buckets"]
     }
     fail = {item["symbol"] for item in universe["instruments"]} - keep
-    _enable_gateway(project_root)
+    _enable_approved_adapter(project_root)
     result = SourceService(
         project_root,
         FakeMarketDataAdapter(fail),
@@ -160,7 +162,7 @@ def test_incomplete_coverage_is_research_only_not_silently_ready(
 
 
 def test_stale_source_heartbeat_blocks_production(project_root: Path) -> None:
-    _enable_gateway(project_root)
+    _enable_approved_adapter(project_root)
     result = SourceService(
         project_root,
         FakeMarketDataAdapter(),
@@ -229,7 +231,73 @@ def test_gateway_adapter_uses_header_token_and_normalizes_numeric_data() -> None
     assert captured["timeout"] == 30
 
 
-def test_disabled_gateway_fails_closed(project_root: Path) -> None:
+def test_tiingo_adapter_uses_header_token_and_derives_metrics() -> None:
+    captured = []
+    history = []
+    first_day = date(2026, 6, 25)
+    for index in range(20):
+        history.append(
+            {
+                "date": (first_day + timedelta(days=index)).isoformat(),
+                "adjClose": 100.0 + index,
+                "adjVolume": 1_000.0,
+            }
+        )
+
+    def transport(request, timeout):
+        captured.append(
+            {
+                "url": request.full_url,
+                "authorization": request.get_header("Authorization"),
+                "timeout": timeout,
+            }
+        )
+        if "/equity/intraday/" in request.full_url:
+            return [
+                {
+                    "ticker": "NVDA",
+                    "timestamp": "2026-07-15T19:59:30Z",
+                    "tngoLast": 120.0,
+                    "lqBidPrice": 119.9,
+                    "lqAskPrice": 120.1,
+                    "volume": 1_500.0,
+                }
+            ]
+        return history
+
+    adapter = TiingoMarketDataAdapter(
+        "https://api.tiingo.com",
+        "api.tiingo.com",
+        "tiingo-secret",
+        "test",
+        transport=transport,
+    )
+    record = adapter.fetch_market_record({"symbol": "NVDA"}, "2026-07-15")
+    assert record["quote"]["price"] == 120.0
+    assert record["bar_metrics"]["average_volume_20d"] == 1_000.0
+    assert record["bar_metrics"]["volume_ratio"] == 1.5
+    assert record["bar_metrics"]["momentum_20d_pct"] == pytest.approx(20.0)
+    assert len(captured) == 2
+    assert all(item["authorization"] == "Token tiingo-secret" for item in captured)
+    assert all("tiingo-secret" not in item["url"] for item in captured)
+    assert all(item["timeout"] == 30 for item in captured)
+
+
+def test_configured_tiingo_adapter_requires_token(
+    project_root: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("STOCKTREND_TIINGO_API_TOKEN", raising=False)
+    with pytest.raises(ConfigurationError, match="token"):
+        create_source_adapter(project_root)
+
+
+def test_disabled_approved_adapter_fails_closed(project_root: Path) -> None:
+    path = project_root / "spec" / "sources.yaml"
+    value = yaml.safe_load(path.read_text(encoding="utf-8"))
+    approved = value["production"]["approved_adapter"]
+    value["adapters"][approved]["enabled"] = False
+    path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
     with pytest.raises(ConfigurationError, match="disabled"):
         create_source_adapter(project_root)
 

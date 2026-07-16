@@ -19,7 +19,7 @@ sources:
     official_api_required: true
     allowlist: []
 production:
-  approved_adapter: http_json_gateway
+  approved_adapter: tiingo_market_data
   snapshot_max_age_seconds: 900
   heartbeat_max_age_seconds: 900
   quote_max_age_seconds: 900
@@ -34,4 +34,14 @@ adapters:
     token_required: true
     timeout_seconds: 30
     license_class: configured_market_data
+    redirects_allowed: false
+  tiingo_market_data:
+    enabled: true
+    credential_scope: read_only
+    base_url: https://api.tiingo.com
+    allowed_host: api.tiingo.com
+    token_env: STOCKTREND_TIINGO_API_TOKEN
+    token_required: true
+    timeout_seconds: 30
+    license_class: tiingo_internal_use_market_data
     redirects_allowed: false

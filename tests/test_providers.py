@@ -119,6 +119,8 @@ def test_codex_subscription_requires_chatgpt_auth_and_strips_api_keys(
         calls.append((command, kwargs))
         assert "OPENAI_API_KEY" not in kwargs["env"]
         assert "CODEX_API_KEY" not in kwargs["env"]
+        assert "ANTHROPIC_API_KEY" not in kwargs["env"]
+        assert "STOCKTREND_TIINGO_API_TOKEN" not in kwargs["env"]
         if command[1:3] == ["login", "status"]:
             return SimpleNamespace(
                 returncode=0,
@@ -131,6 +133,8 @@ def test_codex_subscription_requires_chatgpt_auth_and_strips_api_keys(
 
     monkeypatch.setenv("OPENAI_API_KEY", "must-not-leak")
     monkeypatch.setenv("CODEX_API_KEY", "must-not-leak")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "must-not-leak")
+    monkeypatch.setenv("STOCKTREND_TIINGO_API_TOKEN", "must-not-leak")
     monkeypatch.setattr("stocktrend.providers.subprocess.run", fake_run)
     client = CodexSubscriptionClient(model="gpt-test")
     assert client.generate_json("test", "system", {"value": 1}, SCHEMA) == {
@@ -150,6 +154,9 @@ def test_claude_subscription_requires_non_api_auth_and_disables_tools(
     def fake_run(command, **kwargs):
         calls.append((command, kwargs))
         assert "ANTHROPIC_API_KEY" not in kwargs["env"]
+        assert "OPENAI_API_KEY" not in kwargs["env"]
+        assert "CODEX_API_KEY" not in kwargs["env"]
+        assert "STOCKTREND_TIINGO_API_TOKEN" not in kwargs["env"]
         if command[1:3] == ["auth", "status"]:
             return SimpleNamespace(
                 returncode=0,
@@ -165,6 +172,9 @@ def test_claude_subscription_requires_non_api_auth_and_disables_tools(
         )
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "must-not-leak")
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-leak")
+    monkeypatch.setenv("CODEX_API_KEY", "must-not-leak")
+    monkeypatch.setenv("STOCKTREND_TIINGO_API_TOKEN", "must-not-leak")
     monkeypatch.setattr("stocktrend.providers.subprocess.run", fake_run)
     client = ClaudeSubscriptionClient(model="sonnet")
     assert client.generate_json("test", "system", {"value": 1}, SCHEMA) == {

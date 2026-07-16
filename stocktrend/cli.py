@@ -357,7 +357,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     source.add_argument("--session-date", required=True)
     source.add_argument("--analysis-window", default="close")
-    source.add_argument("--provider", default="http_json_gateway")
+    source.add_argument(
+        "--provider",
+        help="must match production.approved_adapter; defaults to that adapter",
+    )
     source.add_argument("--output")
     source.set_defaults(function=command_source)
 
@@ -383,7 +386,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     live_analysis.add_argument("--session-date", required=True)
     live_analysis.add_argument("--analysis-window", default="close")
-    live_analysis.add_argument("--provider", default="http_json_gateway")
+    live_analysis.add_argument(
+        "--provider",
+        help="must match production.approved_adapter; defaults to that adapter",
+    )
     live_analysis.add_argument(
         "--host",
         choices=["auto", "codex", "claude", "api"],

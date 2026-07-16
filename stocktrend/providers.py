@@ -283,11 +283,16 @@ def _subscription_environment(vendor: str) -> Dict[str, str]:
     """Return an environment that cannot silently select usage-based API auth."""
 
     environment = dict(os.environ)
-    if vendor == "openai":
-        for name in ("OPENAI_API_KEY", "CODEX_API_KEY"):
-            environment.pop(name, None)
-    elif vendor == "anthropic":
-        environment.pop("ANTHROPIC_API_KEY", None)
+    if vendor not in ("openai", "anthropic"):
+        raise ConfigurationError("unknown subscription vendor")
+    for name in (
+        "OPENAI_API_KEY",
+        "CODEX_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "STOCKTREND_MARKET_DATA_TOKEN",
+        "STOCKTREND_TIINGO_API_TOKEN",
+    ):
+        environment.pop(name, None)
     return environment
 
 
