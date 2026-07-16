@@ -2,6 +2,8 @@
 
 This repository is the analysis-only reference implementation of
 [stock-trend-research-workflow-plan-v3_0.md](stock-trend-research-workflow-plan-v3_0.md).
+See [ARCH.md](ARCH.md) for the detailed execution architecture, trust
+boundaries, model routing, and task identities.
 
 It provides:
 
